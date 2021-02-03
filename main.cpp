@@ -161,7 +161,7 @@ static Array makeScalarArray(Value value)
 }
 
 
-static Array calculate(Number arg)
+static Array evaluate(Number arg)
 {
   return makeScalarArray(arg);
 }
@@ -200,34 +200,6 @@ static ostream& operator<<(ostream& s, const vector<T> &v)
 
   s << " ]";
   return s;
-}
-
-
-static Array join(Array arg1, Array arg2)
-{
-  if (arg1.shape.size() == 0 && arg2.shape.size() == 0) {
-    Array a;
-    a.shape.resize(1);
-    a.shape[0] = 2;
-    a.values.resize(2);
-    a.values[0] = arg1.values[0];
-    a.values[1] = arg2.values[0];
-    return a;
-  }
-  else if (arg1.shape.size() == 0 && arg2.shape.size() == 1) {
-    Array a;
-    a.shape.resize(1);
-    a.shape[0] = arg2.shape[0] + 1;
-    a.values.resize(a.shape[0]);
-    a.values[0] = arg1.values[0];
-    std::copy(arg2.values.begin(), arg2.values.end(), a.values.begin() + 1);
-    return a;
-  }
-  else {
-    cerr << "arg1.shape: " << arg1.shape << "\n";
-    cerr << "arg2.shape: " << arg2.shape << "\n";
-    assert(false);
-  }
 }
 
 
@@ -291,6 +263,46 @@ static Array evaluate(BoundRight<Iota> arg)
 }
 
 
+template <typename Left, typename Right>
+struct Atop {
+};
+
+
+template <typename A, typename B>
+static Atop<A,B> evaluate(Atop<A,B> arg)
+{
+  return arg;
+}
+
+
+static Array join(Array arg1, Array arg2)
+{
+  if (arg1.shape.size() == 0 && arg2.shape.size() == 0) {
+    Array a;
+    a.shape.resize(1);
+    a.shape[0] = 2;
+    a.values.resize(2);
+    a.values[0] = arg1.values[0];
+    a.values[1] = arg2.values[0];
+    return a;
+  }
+  else if (arg1.shape.size() == 0 && arg2.shape.size() == 1) {
+    Array a;
+    a.shape.resize(1);
+    a.shape[0] = arg2.shape[0] + 1;
+    a.values.resize(a.shape[0]);
+    a.values[0] = arg1.values[0];
+    std::copy(arg2.values.begin(), arg2.values.end(), a.values.begin() + 1);
+    return a;
+  }
+  else {
+    cerr << "arg1.shape: " << arg1.shape << "\n";
+    cerr << "arg2.shape: " << arg2.shape << "\n";
+    assert(false);
+  }
+}
+
+
 template <typename T>
 static BoundRight<T> join(Primitive<T>, Array array)
 {
@@ -322,16 +334,9 @@ static BoundBoth<T> join(Array arg1, BoundBoth<T> args)
 
 
 template <typename T>
-static Primitive<T> calculate(Primitive<T> (*)())
+static Primitive<T> evaluate(Primitive<T> (*)())
 {
   return {};
-}
-
-
-template <typename T>
-static Primitive<T> calculate(Primitive<T> arg)
-{
-  return arg;
 }
 
 
@@ -355,6 +360,20 @@ join(Primitive<Reduce> /*left*/, BoundRight<Iota> right)
 }
 
 
+static Atop<Primitive<Reduce>,Primitive<Iota>>
+join(Primitive<Reduce>, Primitive<Iota>)
+{
+  return {};
+}
+
+
+static Atop<BoundOperator<Plus,Reduce>,Primitive<Iota>>
+join(Primitive<Plus>, Atop<Primitive<Reduce>, Primitive<Iota>>)
+{
+  return {};
+}
+
+
 static BoundRight<BoundOperator<Plus,Reduce>>
 join(Primitive<Plus> /*left*/, BoundRight<Reduce> right)
 {
@@ -362,11 +381,30 @@ join(Primitive<Plus> /*left*/, BoundRight<Reduce> right)
 }
 
 
+template <typename Arg>
+static auto calculate(Arg arg)
+{
+  return evaluate(arg);
+}
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto calculate(Arg1 arg1, Arg2 arg2, Args ...args)
 {
-  return join(calculate(arg1), calculate(arg2, args...));
+  return join(evaluate(arg1), calculate(arg2, args...));
 }
+
+
+#if 1
+static BoundRight<BoundOperator<Plus,Reduce>>
+join(
+  Atop<BoundOperator<Plus, Reduce>, Primitive<Iota> >,
+  Array right
+)
+{
+  return {evaluate(BoundRight<Iota>{right})};
+}
+#endif
 
 
 template <typename Function>
@@ -491,4 +529,5 @@ int main()
   assert(_(_.shape, "hello") == _(5));
   assert(_(_.iota, 3) == _(1,2,3));
   assert(_(_.plus, _.reduce, _.iota, 3) == _(6));
+  assert(_(_(_.plus, _.reduce, _.iota), 3) == _(6));
 }
