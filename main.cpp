@@ -7,6 +7,12 @@
 #define ADD_EACH 0
 #define CHANGE_JOINING 0
 
+#define CHANGE_BOUND_RIGHT 0
+  // I think BoundRight can have a vector<Value> for the left
+
+#define CHANGE_EVALUATE_NUMBER 0
+  // Evaluating a value should yield a value.
+
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -183,6 +189,7 @@ struct Array {
 }
 
 
+#if !CHANGE_BOUND_RIGHT
 namespace {
 template <typename T>
 struct BoundBoth {
@@ -190,6 +197,7 @@ struct BoundBoth {
   Array right;
 };
 }
+#endif
 
 
 namespace {
@@ -234,6 +242,9 @@ namespace {
 template <typename T>
 struct BoundRight {
   Array right;
+#if CHANGE_BOUND_RIGHT
+  vector<Value> left;
+#endif
 };
 }
 
@@ -300,10 +311,34 @@ static Array evaluateBinary(Array left, Array right, Function f)
 }
 
 
+#if CHANGE_EVALUATE_NUMBER
+static Value evaluate(Number arg)
+{
+  return arg;
+}
+
+
+static Value evaluate(Value arg)
+{
+  return arg;
+}
+#else
 static Array evaluate(Number arg)
 {
   return makeScalarArray(arg);
 }
+#endif
+
+
+#if CHANGE_JOINING
+static Array evaluate(vector<Value> arg)
+{
+  Array result;
+  result.shape = { int(arg.size()) };
+  result.values = arg;
+  return result;
+}
+#endif
 
 
 static Array evaluate(BoundRight<Shape> arg)
@@ -382,13 +417,16 @@ static Operator<Each> evaluate(Primitive<Each> (*)())
 #endif
 
 
+#if !CHANGE_BOUND_RIGHT
 static Array evaluate(BoundBoth<Equal> arg)
 {
   auto f = [](auto a, auto b){ return Number(a == b); };
   return evaluateBinary(arg.left, arg.right, f);
 }
+#endif
 
 
+#if !CHANGE_BOUND_RIGHT
 template <typename T, typename G>
 static Array evaluateNumberBinary(BoundBoth<T> arg, const G &g)
 {
@@ -406,18 +444,23 @@ static Array evaluateNumberBinary(BoundBoth<T> arg, const G &g)
 
   return evaluateBinary(arg.left, arg.right, f);
 }
+#endif
 
 
+#if !CHANGE_BOUND_RIGHT
 static Array evaluate(BoundBoth<Plus> arg)
 {
   return evaluateNumberBinary(arg, [](Number a, Number b) { return a + b; });
 }
+#endif
 
 
+#if !CHANGE_BOUND_RIGHT
 static Array evaluate(BoundBoth<Times> arg)
 {
   return evaluateNumberBinary(arg, [](Number a, Number b) { return a * b; });
 }
+#endif
 
 
 static Array evaluate(Array array)
@@ -460,6 +503,14 @@ static Array evaluate(const char *arg)
 {
   return makeCharArray(arg);
 }
+
+
+#if CHANGE_JOINING
+static Array evaluate(Value value)
+{
+  return makeScalarArray(value);
+}
+#endif
 
 
 static Array join(Array arg1, Array arg2)
@@ -506,27 +557,62 @@ static BoundRight<T> join(Primitive<T>, Array array)
 }
 
 
-#if ADD_EACH
+#if CHANGE_JOINING
 template <typename T>
-static BoundRight<Operator<T>> join(Operator<T>, Array array)
+static BoundRight<T> join(Primitive<T>, Value)
 {
-  return { array };
+  assert(false);
 }
 #endif
 
 
+#if CHANGE_JOINING
+template <typename T>
+static BoundRight<T> join(Primitive<T>, vector<Value> right)
+{
+  return { evaluate(right) };
+}
+#endif
+
+
+
+#if !CHANGE_BOUND_RIGHT
 template <typename T>
 static BoundBoth<T> join(Array left, BoundRight<T> equal_array)
+// rename equal_array
 {
   return { left, equal_array.right };
 }
+#endif
 
 
+#if CHANGE_JOINING
+template <typename T>
+static BoundBoth<T> join(Value left, BoundRight<T> equal_array)
+{
+  assert(false);
+  // return { left, equal_array.right };
+}
+#endif
+
+
+#if CHANGE_JOINING
+template <typename T>
+static BoundBoth<T> join(Value left, BoundBoth<T> equal_array)
+{
+  assert(false);
+  // return { left, equal_array.right };
+}
+#endif
+
+
+#if !CHANGE_BOUND_RIGHT
 template <typename T>
 static BoundBoth<T> join(Array arg1, BoundBoth<T> args)
 {
   return { join(arg1, args.left), args.right };
 }
+#endif
 
 
 static BoundRight<Equal> join(Primitive<Equal> left, BoundRight<Shape> right)
@@ -576,28 +662,74 @@ join(Primitive<First> /*left*/, BoundRight<Operator<T>> right)
 #endif
 
 
+#if !CHANGE_BOUND_RIGHT
 static BoundRight<Times>
 join(Primitive<Times>, BoundBoth<Plus> right)
 {
-  return {evaluate(right)};
+  return { evaluate(right) };
 }
+#endif
+
+
+#if CHANGE_JOINING
+static vector<Value> join(Value left, Value right)
+{
+  return { left, right };
+}
+#endif
+
+
+#if CHANGE_EVALUATE_NUMBER
+static Array join(Value left, Value right)
+{
+  Array a;
+  a.shape.resize(1);
+  a.shape[0] = 2;
+  a.values.resize(2);
+  a.values[0] = left;
+  a.values[1] = right;
+  return a;
+}
+#endif
+
+
+#if CHANGE_JOINING
+static vector<Value> join(Value left, vector<Value> right)
+{
+  vector<Value> result = { left };
+  result.insert(result.end(), right.begin(), right.end());
+  return result;
+}
+#endif
 
 
 template <typename Arg>
-static auto calculate(Arg arg)
+static auto combine(Arg arg)
 {
   return evaluate(arg);
 }
 
 
 template <typename Arg1, typename Arg2, typename ...Args>
-static auto calculate(Arg1 arg1, Arg2 arg2, Args ...args)
+static auto combine(Arg1 arg1, Arg2 arg2, Args ...args)
 {
-  return join(evaluate(arg1), calculate(arg2, args...));
+  return join(evaluate(arg1), combine(arg2, args...));
 }
 
 
-#if 1
+#if CHANGE_JOINING
+static BoundRight<BoundOperator<Plus,Reduce>>
+join(
+  Atop<BoundOperator<Plus, Reduce>, Primitive<Iota> >,
+  Value /*right*/
+)
+{
+  assert(false);
+  //return {evaluate(BoundRight<Iota>{right})};
+}
+#endif
+
+
 static BoundRight<BoundOperator<Plus,Reduce>>
 join(
   Atop<BoundOperator<Plus, Reduce>, Primitive<Iota> >,
@@ -606,7 +738,6 @@ join(
 {
   return {evaluate(BoundRight<Iota>{right})};
 }
-#endif
 
 
 namespace {
@@ -614,7 +745,7 @@ struct Placeholder {
   template <typename ...Args>
   auto operator()(Args ...args)
   {
-    return evaluate(calculate(args...));
+    return evaluate(combine(args...));
   }
 
   static Primitive<Shape>  shape()  { return {}; }
