@@ -10,9 +10,6 @@
 #define CHANGE_BOUND_RIGHT 0
   // I think BoundRight can have a vector<Value> for the left
 
-#define CHANGE_EVALUATE_NUMBER 0
-  // Evaluating a value should yield a value.
-
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -73,17 +70,15 @@ struct Value {
   {
   }
 
-  Value(const Array &arg)
-  : type(Type::array_ptr), array_ptr(std::make_unique<Array>(arg))
-  {
-  }
+  Value(Array arg);
 
-  Value(const Value &arg)
+  Value(Value &&arg)
   : type(arg.type)
   {
-    createFrom(arg);
+    createFrom(std::move(arg));
   }
 
+  bool isArray() const { return type == Type::array_ptr; }
   bool isNumber() const { return type == Type::number; }
   bool isCharacter() const { return type == Type::character; }
 
@@ -91,6 +86,13 @@ struct Value {
   {
     assert(type == Type::number);
     return number;
+  }
+
+  const Array &asArray() const
+  {
+    assert(type == Type::array_ptr);
+    assert(array_ptr);
+    return *array_ptr;
   }
 
   friend bool operator==(const Value &a, const Value &b)
@@ -105,6 +107,8 @@ struct Value {
       case Type::character:
         assert(false);
       case Type::array_ptr:
+        cerr << "a.array_ptr.get(): " << a.array_ptr.get() << "\n";
+        cerr << "b.array_ptr.get(): " << b.array_ptr.get() << "\n";
         assert(false);
     }
     assert(false);
@@ -125,7 +129,7 @@ struct Value {
     }
   }
 
-  void createFrom(const Value &arg)
+  void createFrom(Value &&arg)
   {
     assert(type == arg.type);
 
@@ -138,19 +142,16 @@ struct Value {
         break;
       case Type::array_ptr:
         assert(arg.array_ptr);
-        new (&array_ptr) auto(std::make_unique<Array>(*arg.array_ptr));
+        new (&array_ptr) auto(std::move(arg.array_ptr));
         break;
     }
   }
 
-  Value& operator=(const Value &arg)
+  Value& operator=(Value arg)
   {
     destroy();
-
     type = arg.type;
-
-    createFrom(arg);
-
+    createFrom(std::move(arg));
     return *this;
   }
 
@@ -170,6 +171,10 @@ struct Array {
   vector<int> shape;
   vector<Value> values;
 
+  Array() = default;
+  Array(const Array &) = delete;
+  Array(Array &&) = default;
+
   friend bool operator==(const Array &a, const Array &b)
   {
     if (a.shape != b.shape) {
@@ -186,6 +191,12 @@ struct Array {
     return true;
   }
 };
+}
+
+
+Value::Value(Array arg)
+: type(Type::array_ptr), array_ptr(std::make_unique<Array>(std::move(arg)))
+{
 }
 
 
@@ -217,7 +228,7 @@ struct BoundOperator {
 static Array makeScalarArray(Value value)
 {
   Array result;
-  result.values = {value};
+  result.values.push_back(std::move(value));
   return result;
 }
 
@@ -283,8 +294,9 @@ static Array evaluateBinary(Array left, Array right, Function f)
       Array result;
       result.shape = vector<int>{3};
 
-      result.values =
-        vector<Value>{ Value(f(left.values[0], right.values[0])) };
+      result.values.push_back(
+        f(std::move(left.values[0]), std::move(right.values[0]))
+      );
 
       return result;
     }
@@ -300,7 +312,7 @@ static Array evaluateBinary(Array left, Array right, Function f)
     auto out = result.values.begin();
 
     while (out != result.values.end()) {
-      *out++ = f(*in1++, *in2++);
+      *out++ = f(std::move(*in1++), std::move(*in2++));
     }
 
     return result;
@@ -311,23 +323,10 @@ static Array evaluateBinary(Array left, Array right, Function f)
 }
 
 
-#if CHANGE_EVALUATE_NUMBER
 static Value evaluate(Number arg)
 {
   return arg;
 }
-
-
-static Value evaluate(Value arg)
-{
-  return arg;
-}
-#else
-static Array evaluate(Number arg)
-{
-  return makeScalarArray(arg);
-}
-#endif
 
 
 #if CHANGE_JOINING
@@ -335,7 +334,7 @@ static Array evaluate(vector<Value> arg)
 {
   Array result;
   result.shape = { int(arg.size()) };
-  result.values = arg;
+  result.values = std::move(arg);
   return result;
 }
 #endif
@@ -343,7 +342,7 @@ static Array evaluate(vector<Value> arg)
 
 static Array evaluate(BoundRight<Shape> arg)
 {
-  Array array = arg.right;
+  Array &array = arg.right;
   Array result;
   result.shape = { int(array.shape.size()) };
 
@@ -382,7 +381,7 @@ static Array evaluate(BoundRight<First> arg)
   }
 
   if (arg.right.shape.size() == 1) {
-    return makeScalarArray(arg.right.values[0]);
+    return makeScalarArray(std::move(arg.right.values[0]));
   }
 
   assert(false);
@@ -421,7 +420,7 @@ static Operator<Each> evaluate(Primitive<Each> (*)())
 static Array evaluate(BoundBoth<Equal> arg)
 {
   auto f = [](auto a, auto b){ return Number(a == b); };
-  return evaluateBinary(arg.left, arg.right, f);
+  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
 }
 #endif
 
@@ -442,7 +441,7 @@ static Array evaluateNumberBinary(BoundBoth<T> arg, const G &g)
     return Value();
   };
 
-  return evaluateBinary(arg.left, arg.right, f);
+  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
 }
 #endif
 
@@ -450,7 +449,11 @@ static Array evaluateNumberBinary(BoundBoth<T> arg, const G &g)
 #if !CHANGE_BOUND_RIGHT
 static Array evaluate(BoundBoth<Plus> arg)
 {
-  return evaluateNumberBinary(arg, [](Number a, Number b) { return a + b; });
+  return
+    evaluateNumberBinary(
+      std::move(arg),
+      [](Number a, Number b) { return a + b; }
+    );
 }
 #endif
 
@@ -458,7 +461,11 @@ static Array evaluate(BoundBoth<Plus> arg)
 #if !CHANGE_BOUND_RIGHT
 static Array evaluate(BoundBoth<Times> arg)
 {
-  return evaluateNumberBinary(arg, [](Number a, Number b) { return a * b; });
+  return
+    evaluateNumberBinary(
+      std::move(arg),
+      [](Number a, Number b) { return a * b; }
+    );
 }
 #endif
 
@@ -505,14 +512,40 @@ static Array evaluate(const char *arg)
 }
 
 
-#if CHANGE_JOINING
 static Array evaluate(Value value)
 {
-  return makeScalarArray(value);
+  return makeScalarArray(std::move(value));
 }
-#endif
 
 
+static Array join(Value arg1, Array arg2)
+{
+  if (arg2.shape.size() == 0) {
+    Array a;
+    a.shape.resize(1);
+    a.shape[0] = 2;
+    a.values.resize(2);
+    a.values[0] = std::move(arg1);
+    a.values[1] = std::move(arg2.values[0]);
+    return a;
+  }
+  else if (arg2.shape.size() == 1) {
+    Array a;
+    a.shape.resize(1);
+    a.shape[0] = arg2.shape[0] + 1;
+    a.values.resize(a.shape[0]);
+    a.values[0] = std::move(arg1);
+    std::move(arg2.values.begin(), arg2.values.end(), a.values.begin() + 1);
+    return a;
+  }
+  else {
+    cerr << "arg2.shape: " << arg2.shape << "\n";
+    assert(false);
+  }
+}
+
+
+#if 1
 static Array join(Array arg1, Array arg2)
 {
   if (arg1.shape.size() == 0 && arg2.shape.size() == 0) {
@@ -520,8 +553,8 @@ static Array join(Array arg1, Array arg2)
     a.shape.resize(1);
     a.shape[0] = 2;
     a.values.resize(2);
-    a.values[0] = arg1.values[0];
-    a.values[1] = arg2.values[0];
+    a.values[0] = std::move(arg1.values[0]);
+    a.values[1] = std::move(arg2.values[0]);
     return a;
   }
   else if (arg1.shape.size() == 0 && arg2.shape.size() == 1) {
@@ -529,8 +562,8 @@ static Array join(Array arg1, Array arg2)
     a.shape.resize(1);
     a.shape[0] = arg2.shape[0] + 1;
     a.values.resize(a.shape[0]);
-    a.values[0] = arg1.values[0];
-    std::copy(arg2.values.begin(), arg2.values.end(), a.values.begin() + 1);
+    a.values[0] = std::move(arg1.values[0]);
+    std::move(arg2.values.begin(), arg2.values.end(), a.values.begin() + 1);
     return a;
   }
   else if (arg1.shape.size() == 1 && arg2.shape.size() == 1) {
@@ -538,8 +571,8 @@ static Array join(Array arg1, Array arg2)
     a.shape.resize(1);
     a.shape[0] = 2;
     a.values.resize(2);
-    a.values[0] = arg1;
-    a.values[1] = arg2;
+    a.values[0] = std::move(arg1);
+    a.values[1] = std::move(arg2);
     return a;
   }
   else {
@@ -548,12 +581,20 @@ static Array join(Array arg1, Array arg2)
     assert(false);
   }
 }
+#endif
+
+
+template <typename T>
+static BoundRight<T> join(Primitive<T>, Value arg)
+{
+  return { makeScalarArray(std::move(arg)) };
+}
 
 
 template <typename T>
 static BoundRight<T> join(Primitive<T>, Array array)
 {
-  return { array };
+  return { std::move(array) };
 }
 
 
@@ -570,18 +611,23 @@ static BoundRight<T> join(Primitive<T>, Value)
 template <typename T>
 static BoundRight<T> join(Primitive<T>, vector<Value> right)
 {
-  return { evaluate(right) };
+  return { evaluate(std::move(right)) };
 }
 #endif
 
 
+template <typename T>
+static BoundBoth<T> join(Value left, BoundRight<T> right)
+{
+  return { makeScalarArray(std::move(left)), std::move(right.right) };
+}
+
 
 #if !CHANGE_BOUND_RIGHT
 template <typename T>
-static BoundBoth<T> join(Array left, BoundRight<T> equal_array)
-// rename equal_array
+static BoundBoth<T> join(Array left, BoundRight<T> right)
 {
-  return { left, equal_array.right };
+  return { std::move(left), std::move(right.right) };
 }
 #endif
 
@@ -596,28 +642,25 @@ static BoundBoth<T> join(Value left, BoundRight<T> equal_array)
 #endif
 
 
-#if CHANGE_JOINING
 template <typename T>
-static BoundBoth<T> join(Value left, BoundBoth<T> equal_array)
+static BoundBoth<T> join(Value arg1, BoundBoth<T> args)
 {
-  assert(false);
-  // return { left, equal_array.right };
+  return { join(std::move(arg1), std::move(args.left)), std::move(args.right) };
 }
-#endif
 
 
 #if !CHANGE_BOUND_RIGHT
 template <typename T>
 static BoundBoth<T> join(Array arg1, BoundBoth<T> args)
 {
-  return { join(arg1, args.left), args.right };
+  return { join(std::move(arg1), std::move(args.left)), std::move(args.right) };
 }
 #endif
 
 
 static BoundRight<Equal> join(Primitive<Equal> left, BoundRight<Shape> right)
 {
-  return join(left, evaluate(right));
+  return join(std::move(left), evaluate(std::move(right)));
 }
 
 
@@ -625,7 +668,7 @@ template <typename T>
 static BoundRight<Operator<T>>
 join(Operator<T> /*left*/, BoundRight<Iota> right)
 {
-  return {evaluate(right)};
+  return { evaluate(std::move(right)) };
 }
 
 
@@ -648,7 +691,7 @@ template <typename T>
 static BoundRight<BoundOperator<Plus,T>>
 join(Primitive<Plus> /*left*/, BoundRight<Operator<T>> right)
 {
-  return {right.right};
+  return { std::move(right.right) };
 }
 
 
@@ -666,7 +709,7 @@ join(Primitive<First> /*left*/, BoundRight<Operator<T>> right)
 static BoundRight<Times>
 join(Primitive<Times>, BoundBoth<Plus> right)
 {
-  return { evaluate(right) };
+  return { evaluate(std::move(right)) };
 }
 #endif
 
@@ -679,18 +722,16 @@ static vector<Value> join(Value left, Value right)
 #endif
 
 
-#if CHANGE_EVALUATE_NUMBER
 static Array join(Value left, Value right)
 {
   Array a;
   a.shape.resize(1);
   a.shape[0] = 2;
   a.values.resize(2);
-  a.values[0] = left;
-  a.values[1] = right;
+  a.values[0] = std::move(left);
+  a.values[1] = std::move(right);
   return a;
 }
-#endif
 
 
 #if CHANGE_JOINING
@@ -706,14 +747,18 @@ static vector<Value> join(Value left, vector<Value> right)
 template <typename Arg>
 static auto combine(Arg arg)
 {
-  return evaluate(arg);
+  return evaluate(std::move(arg));
 }
 
 
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Arg1 arg1, Arg2 arg2, Args ...args)
 {
-  return join(evaluate(arg1), combine(arg2, args...));
+  return
+    join(
+      evaluate(std::move(arg1)),
+      combine(std::move(arg2), std::move(args)...)
+    );
 }
 
 
@@ -733,10 +778,10 @@ join(
 static BoundRight<BoundOperator<Plus,Reduce>>
 join(
   Atop<BoundOperator<Plus, Reduce>, Primitive<Iota> >,
-  Array right
+  Value right
 )
 {
-  return {evaluate(BoundRight<Iota>{right})};
+  return { evaluate(BoundRight<Iota>{makeScalarArray(std::move(right))}) };
 }
 
 
@@ -745,7 +790,7 @@ struct Placeholder {
   template <typename ...Args>
   auto operator()(Args ...args)
   {
-    return evaluate(combine(args...));
+    return evaluate(combine(std::move(args)...));
   }
 
   static Primitive<Shape>  shape()  { return {}; }
