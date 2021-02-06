@@ -7,9 +7,6 @@
 #define ADD_EACH 0
 #define CHANGE_JOINING 0
 
-#define CHANGE_BOUND_RIGHT 0
-  // I think BoundRight can have a vector<Value> for the left
-
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -160,9 +157,16 @@ struct Value {
 }
 
 
-static ostream& operator<<(ostream& , const Value &)
+static ostream& operator<<(ostream& stream, const Value &v)
 {
-  assert(false);
+  if (v.isNumber()) {
+    stream << v.asNumber();
+  }
+  else {
+    assert(false);
+  }
+
+  return stream;
 }
 
 
@@ -200,13 +204,19 @@ Value::Value(Array arg)
 }
 
 
-#if !CHANGE_BOUND_RIGHT
-namespace {
-template <typename T>
-struct BoundBoth {
-  Array left;
-  Array right;
-};
+#if 0
+static ostream& operator<<(ostream& stream, const Array &a)
+{
+  stream << "shape: " << a.shape << "\n";
+
+  if (a.shape.size() == 1) {
+    stream << "values: " << a.values << "\n";
+  }
+  else {
+    assert(false);
+  }
+
+  return stream;
 }
 #endif
 
@@ -253,9 +263,7 @@ namespace {
 template <typename T>
 struct BoundRight {
   Array right;
-#if CHANGE_BOUND_RIGHT
-  vector<Value> left;
-#endif
+  vector<Value> left = {};
 };
 }
 
@@ -416,18 +424,33 @@ static Operator<Each> evaluate(Primitive<Each> (*)())
 #endif
 
 
-#if !CHANGE_BOUND_RIGHT
-static Array evaluate(BoundBoth<Equal> arg)
+static Array makeArrayFromVector(vector<Value> v)
+{
+  if (v.empty()) {
+    assert(false);
+  }
+
+  if (v.size() == 1) {
+    return makeScalarArray(std::move(v[0]));
+  }
+
+  Array left;
+  left.shape = { int(v.size()) };
+  left.values = std::move(v);
+  return left;
+}
+
+
+static Array evaluate(BoundRight<Equal> arg)
 {
   auto f = [](auto a, auto b){ return Number(a == b); };
-  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
+  Array left = makeArrayFromVector(std::move(arg.left));
+  return evaluateBinary(std::move(left), std::move(arg.right), f);
 }
-#endif
 
 
-#if !CHANGE_BOUND_RIGHT
 template <typename T, typename G>
-static Array evaluateNumberBinary(BoundBoth<T> arg, const G &g)
+static Array evaluateNumberBinary(BoundRight<T> arg, const G &g)
 {
   auto f = [&](const Value& a, const Value& b)
   {
@@ -441,13 +464,16 @@ static Array evaluateNumberBinary(BoundBoth<T> arg, const G &g)
     return Value();
   };
 
-  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
+  return
+    evaluateBinary(
+      makeArrayFromVector(std::move(arg.left)),
+      std::move(arg.right),
+      f
+    );
 }
-#endif
 
 
-#if !CHANGE_BOUND_RIGHT
-static Array evaluate(BoundBoth<Plus> arg)
+static Array evaluate(BoundRight<Plus> arg)
 {
   return
     evaluateNumberBinary(
@@ -455,11 +481,9 @@ static Array evaluate(BoundBoth<Plus> arg)
       [](Number a, Number b) { return a + b; }
     );
 }
-#endif
 
 
-#if !CHANGE_BOUND_RIGHT
-static Array evaluate(BoundBoth<Times> arg)
+static Array evaluate(BoundRight<Times> arg)
 {
   return
     evaluateNumberBinary(
@@ -467,7 +491,6 @@ static Array evaluate(BoundBoth<Times> arg)
       [](Number a, Number b) { return a * b; }
     );
 }
-#endif
 
 
 static Array evaluate(Array array)
@@ -617,19 +640,12 @@ static BoundRight<T> join(Primitive<T>, vector<Value> right)
 
 
 template <typename T>
-static BoundBoth<T> join(Value left, BoundRight<T> right)
+static BoundRight<T> join(Value left, BoundRight<T> right)
 {
-  return { makeScalarArray(std::move(left)), std::move(right.right) };
+  BoundRight<T> result = std::move(right);
+  result.left.insert(result.left.begin(), std::move(left));
+  return result;
 }
-
-
-#if !CHANGE_BOUND_RIGHT
-template <typename T>
-static BoundBoth<T> join(Array left, BoundRight<T> right)
-{
-  return { std::move(left), std::move(right.right) };
-}
-#endif
 
 
 #if CHANGE_JOINING
@@ -638,22 +654,6 @@ static BoundBoth<T> join(Value left, BoundRight<T> equal_array)
 {
   assert(false);
   // return { left, equal_array.right };
-}
-#endif
-
-
-template <typename T>
-static BoundBoth<T> join(Value arg1, BoundBoth<T> args)
-{
-  return { join(std::move(arg1), std::move(args.left)), std::move(args.right) };
-}
-
-
-#if !CHANGE_BOUND_RIGHT
-template <typename T>
-static BoundBoth<T> join(Array arg1, BoundBoth<T> args)
-{
-  return { join(std::move(arg1), std::move(args.left)), std::move(args.right) };
 }
 #endif
 
@@ -691,6 +691,10 @@ template <typename T>
 static BoundRight<BoundOperator<Plus,T>>
 join(Primitive<Plus> /*left*/, BoundRight<Operator<T>> right)
 {
+  if (!right.left.empty()) {
+    assert(false);
+  }
+
   return { std::move(right.right) };
 }
 
@@ -705,13 +709,11 @@ join(Primitive<First> /*left*/, BoundRight<Operator<T>> right)
 #endif
 
 
-#if !CHANGE_BOUND_RIGHT
 static BoundRight<Times>
-join(Primitive<Times>, BoundBoth<Plus> right)
+join(Primitive<Times>, BoundRight<Plus> right)
 {
   return { evaluate(std::move(right)) };
 }
-#endif
 
 
 #if CHANGE_JOINING
@@ -781,7 +783,11 @@ join(
   Value right
 )
 {
-  return { evaluate(BoundRight<Iota>{makeScalarArray(std::move(right))}) };
+  return {
+    evaluate(
+      BoundRight<Iota>{ makeScalarArray(std::move(right)) }
+    )
+  };
 }
 
 
