@@ -5,7 +5,6 @@
 #include <memory>
 
 #define ADD_EACH 0
-#define CHANGE_JOINING 0
 
 using std::vector;
 using std::cerr;
@@ -157,19 +156,6 @@ struct Value {
 }
 
 
-static ostream& operator<<(ostream& stream, const Value &v)
-{
-  if (v.isNumber()) {
-    stream << v.asNumber();
-  }
-  else {
-    assert(false);
-  }
-
-  return stream;
-}
-
-
 namespace {
 struct Array {
   vector<int> shape;
@@ -204,15 +190,34 @@ Value::Value(Array arg)
 }
 
 
-#if 0
-static ostream& operator<<(ostream& stream, const Array &a)
-{
-  stream << "shape: " << a.shape << "\n";
+static ostream& operator<<(ostream& stream, const Value &v);
+static ostream& operator<<(ostream& stream, const Array &a);
 
-  if (a.shape.size() == 1) {
-    stream << "values: " << a.values << "\n";
+
+static ostream& operator<<(ostream& stream, const Value &v)
+{
+  if (v.isNumber()) {
+    stream << v.asNumber();
+  }
+  else if (v.isArray()) {
+    stream << v.asArray();
   }
   else {
+    assert(false);
+  }
+
+  return stream;
+}
+
+
+#if 1
+static ostream& operator<<(ostream& stream, const Array &a)
+{
+  if (a.shape.size() == 1) {
+    stream << a.values;
+  }
+  else {
+    stream << "shape: " << a.shape << "\n";
     assert(false);
   }
 
@@ -337,7 +342,6 @@ static Value evaluate(Number arg)
 }
 
 
-#if CHANGE_JOINING
 static Array evaluate(vector<Value> arg)
 {
   Array result;
@@ -345,7 +349,6 @@ static Array evaluate(vector<Value> arg)
   result.values = std::move(arg);
   return result;
 }
-#endif
 
 
 static Array evaluate(BoundRight<Shape> arg)
@@ -541,33 +544,6 @@ static Array evaluate(Value value)
 }
 
 
-static Array join(Value arg1, Array arg2)
-{
-  if (arg2.shape.size() == 0) {
-    Array a;
-    a.shape.resize(1);
-    a.shape[0] = 2;
-    a.values.resize(2);
-    a.values[0] = std::move(arg1);
-    a.values[1] = std::move(arg2.values[0]);
-    return a;
-  }
-  else if (arg2.shape.size() == 1) {
-    Array a;
-    a.shape.resize(1);
-    a.shape[0] = arg2.shape[0] + 1;
-    a.values.resize(a.shape[0]);
-    a.values[0] = std::move(arg1);
-    std::move(arg2.values.begin(), arg2.values.end(), a.values.begin() + 1);
-    return a;
-  }
-  else {
-    cerr << "arg2.shape: " << arg2.shape << "\n";
-    assert(false);
-  }
-}
-
-
 #if 1
 static Array join(Array arg1, Array arg2)
 {
@@ -621,22 +597,11 @@ static BoundRight<T> join(Primitive<T>, Array array)
 }
 
 
-#if CHANGE_JOINING
-template <typename T>
-static BoundRight<T> join(Primitive<T>, Value)
-{
-  assert(false);
-}
-#endif
-
-
-#if CHANGE_JOINING
 template <typename T>
 static BoundRight<T> join(Primitive<T>, vector<Value> right)
 {
   return { evaluate(std::move(right)) };
 }
-#endif
 
 
 template <typename T>
@@ -646,16 +611,6 @@ static BoundRight<T> join(Value left, BoundRight<T> right)
   result.left.insert(result.left.begin(), std::move(left));
   return result;
 }
-
-
-#if CHANGE_JOINING
-template <typename T>
-static BoundBoth<T> join(Value left, BoundRight<T> equal_array)
-{
-  assert(false);
-  // return { left, equal_array.right };
-}
-#endif
 
 
 static BoundRight<Equal> join(Primitive<Equal> left, BoundRight<Shape> right)
@@ -716,34 +671,26 @@ join(Primitive<Times>, BoundRight<Plus> right)
 }
 
 
-#if CHANGE_JOINING
 static vector<Value> join(Value left, Value right)
 {
-  return { left, right };
-}
-#endif
-
-
-static Array join(Value left, Value right)
-{
-  Array a;
-  a.shape.resize(1);
-  a.shape[0] = 2;
-  a.values.resize(2);
-  a.values[0] = std::move(left);
-  a.values[1] = std::move(right);
-  return a;
-}
-
-
-#if CHANGE_JOINING
-static vector<Value> join(Value left, vector<Value> right)
-{
-  vector<Value> result = { left };
-  result.insert(result.end(), right.begin(), right.end());
+  vector<Value> result;
+  result.push_back(std::move(left));
+  result.push_back(std::move(right));
   return result;
 }
-#endif
+
+
+static vector<Value> join(Value left, vector<Value> right)
+{
+  vector<Value> result;
+  result.push_back(std::move(left));
+
+  for (auto &x : right) {
+    result.push_back(std::move(x));
+  }
+
+  return result;
+}
 
 
 template <typename Arg>
@@ -762,19 +709,6 @@ static auto combine(Arg1 arg1, Arg2 arg2, Args ...args)
       combine(std::move(arg2), std::move(args)...)
     );
 }
-
-
-#if CHANGE_JOINING
-static BoundRight<BoundOperator<Plus,Reduce>>
-join(
-  Atop<BoundOperator<Plus, Reduce>, Primitive<Iota> >,
-  Value /*right*/
-)
-{
-  assert(false);
-  //return {evaluate(BoundRight<Iota>{right})};
-}
-#endif
 
 
 static BoundRight<BoundOperator<Plus,Reduce>>
@@ -833,11 +767,7 @@ int main()
   assert(_(2, _.times, 3, _.plus, 1) == _(2*(3+1)));
   assert(_(_.first, 1,2,3) == _(1));
   assert(_(_.shape, _(1,2,3), _(4,5,6)) == _(2));
-#if CHANGE_JOINING
-  // We need to be able to differentiate between joining a scalar with
-  // a list of scalars and joining a scalar with an array.
   assert(_(_.shape, 1, _(2,3)) == _(2));
-#endif
 #if ADD_EACH
   assert(_(_.first, _.each, 1, 2, 3, "ABC", _(9, 8, 7)) == _(1,2,3,'A',9));
 #endif
