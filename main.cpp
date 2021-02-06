@@ -4,8 +4,6 @@
 #include <vector>
 #include <memory>
 
-#define ADD_EACH 0
-
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -84,7 +82,20 @@ struct Value {
     return number;
   }
 
+  char asCharacter() const
+  {
+    assert(type == Type::character);
+    return character;
+  }
+
   const Array &asArray() const
+  {
+    assert(type == Type::array_ptr);
+    assert(array_ptr);
+    return *array_ptr;
+  }
+
+  Array &asArray()
   {
     assert(type == Type::array_ptr);
     assert(array_ptr);
@@ -101,7 +112,7 @@ struct Value {
       case Type::number:
         return a.number == b.number;
       case Type::character:
-        assert(false);
+        return a.character == b.character;
       case Type::array_ptr:
         cerr << "a.array_ptr.get(): " << a.array_ptr.get() << "\n";
         cerr << "b.array_ptr.get(): " << b.array_ptr.get() << "\n";
@@ -165,21 +176,6 @@ struct Array {
   Array(const Array &) = delete;
   Array(Array &&) = default;
 
-  friend bool operator==(const Array &a, const Array &b)
-  {
-    if (a.shape != b.shape) {
-      if (a.values.size() == 1 && b.values.size() == 1) {
-        return a.values[0] == b.values[0];
-      }
-      assert(false);
-    }
-
-    if (a.values != b.values) {
-      return false;
-    }
-
-    return true;
-  }
 };
 }
 
@@ -199,6 +195,9 @@ static ostream& operator<<(ostream& stream, const Value &v)
   if (v.isNumber()) {
     stream << v.asNumber();
   }
+  else if (v.isCharacter()) {
+    stream << "'" << v.asCharacter() << "'";
+  }
   else if (v.isArray()) {
     stream << v.asArray();
   }
@@ -213,7 +212,10 @@ static ostream& operator<<(ostream& stream, const Value &v)
 #if 1
 static ostream& operator<<(ostream& stream, const Array &a)
 {
-  if (a.shape.size() == 1) {
+  if (a.shape.empty()) {
+    stream << a.values[0];
+  }
+  else if (a.shape.size() == 1) {
     stream << a.values;
   }
   else {
@@ -226,6 +228,24 @@ static ostream& operator<<(ostream& stream, const Array &a)
 #endif
 
 
+static bool operator==(const Array &a, const Array &b)
+{
+  if (a.shape != b.shape) {
+    if (a.values.size() == 1 && b.values.size() == 1) {
+      return a.values[0] == b.values[0];
+    }
+
+    cerr << "a: " << a << "\n";
+    cerr << "b: " << b << "\n";
+    assert(false);
+  }
+
+  if (a.values != b.values) {
+    return false;
+  }
+
+  return true;
+}
 namespace {
 template <typename T>
 struct Operator {
@@ -288,9 +308,7 @@ struct Atop {
 namespace {
 struct Shape;
 struct First;
-#if ADD_EACH
 struct Each;
-#endif
 struct Equal;
 struct Plus;
 struct Times;
@@ -336,7 +354,36 @@ static Array evaluateBinary(Array left, Array right, Function f)
 }
 
 
-static Value evaluate(Number arg)
+static Array makeArrayFromVector(vector<Value> v)
+{
+  if (v.empty()) {
+    assert(false);
+  }
+
+  if (v.size() == 1) {
+    return makeScalarArray(std::move(v[0]));
+  }
+
+  Array left;
+  left.shape = { int(v.size()) };
+  left.values = std::move(v);
+  return left;
+}
+
+
+static Value evaluate(int arg)
+{
+  return Number(arg);
+}
+
+
+static inline Value evaluate(Number arg)
+{
+  return arg;
+}
+
+
+static inline Value evaluate(char arg)
 {
   return arg;
 }
@@ -344,10 +391,7 @@ static Value evaluate(Number arg)
 
 static Array evaluate(vector<Value> arg)
 {
-  Array result;
-  result.shape = { int(arg.size()) };
-  result.values = std::move(arg);
-  return result;
+  return makeArrayFromVector(std::move(arg));
 }
 
 
@@ -419,28 +463,9 @@ static Operator<Reduce> evaluate(Primitive<Reduce> (*)())
 }
 
 
-#if ADD_EACH
 static Operator<Each> evaluate(Primitive<Each> (*)())
 {
   return {};
-}
-#endif
-
-
-static Array makeArrayFromVector(vector<Value> v)
-{
-  if (v.empty()) {
-    assert(false);
-  }
-
-  if (v.size() == 1) {
-    return makeScalarArray(std::move(v[0]));
-  }
-
-  Array left;
-  left.shape = { int(v.size()) };
-  left.values = std::move(v);
-  return left;
 }
 
 
@@ -524,12 +549,50 @@ static Array evaluate(BoundRight<BoundOperator<Plus,Reduce>> arg)
 }
 
 
-#if ADD_EACH
-static Array evaluate(BoundRight<BoundOperator<First,Each>> /*arg*/)
+static Array evaluate(BoundRight<BoundOperator<First,Each>> arg)
 {
+  if (!arg.left.empty()) {
+    assert(false);
+  }
+
+  if (arg.right.shape.empty()) {
+    assert(false);
+  }
+  else if (arg.right.shape.size() == 1) {
+    vector<Value> result;
+
+    for (auto &x : arg.right.values) {
+      if (x.isNumber()) {
+        result.push_back(std::move(x));
+      }
+      else if (x.isArray()) {
+        if (x.asArray().shape.empty()) {
+          assert(false);
+        }
+        else if (x.asArray().shape.size() == 1) {
+          if (x.asArray().values.empty()) {
+            assert(false);
+          }
+
+          result.push_back(std::move(x.asArray().values[0]));
+        }
+        else {
+          assert(false);
+        }
+      }
+      else {
+        assert(false);
+      }
+    }
+
+    return makeArrayFromVector(std::move(result));
+  }
+  else {
+    assert(false);
+  }
+
   assert(false);
 }
-#endif
 
 
 static Array evaluate(const char *arg)
@@ -542,45 +605,6 @@ static Array evaluate(Value value)
 {
   return makeScalarArray(std::move(value));
 }
-
-
-#if 1
-static Array join(Array arg1, Array arg2)
-{
-  if (arg1.shape.size() == 0 && arg2.shape.size() == 0) {
-    Array a;
-    a.shape.resize(1);
-    a.shape[0] = 2;
-    a.values.resize(2);
-    a.values[0] = std::move(arg1.values[0]);
-    a.values[1] = std::move(arg2.values[0]);
-    return a;
-  }
-  else if (arg1.shape.size() == 0 && arg2.shape.size() == 1) {
-    Array a;
-    a.shape.resize(1);
-    a.shape[0] = arg2.shape[0] + 1;
-    a.values.resize(a.shape[0]);
-    a.values[0] = std::move(arg1.values[0]);
-    std::move(arg2.values.begin(), arg2.values.end(), a.values.begin() + 1);
-    return a;
-  }
-  else if (arg1.shape.size() == 1 && arg2.shape.size() == 1) {
-    Array a;
-    a.shape.resize(1);
-    a.shape[0] = 2;
-    a.values.resize(2);
-    a.values[0] = std::move(arg1);
-    a.values[1] = std::move(arg2);
-    return a;
-  }
-  else {
-    cerr << "arg1.shape: " << arg1.shape << "\n";
-    cerr << "arg2.shape: " << arg2.shape << "\n";
-    assert(false);
-  }
-}
-#endif
 
 
 template <typename T>
@@ -628,6 +652,14 @@ join(Operator<T> /*left*/, BoundRight<Iota> right)
 
 
 template <typename T>
+static BoundRight<Operator<T>>
+join(Operator<T>, vector<Value> v)
+{
+  return { makeArrayFromVector(std::move(v)) };
+}
+
+
+template <typename T>
 static Atop<Operator<T>,Primitive<Iota>>
 join(Operator<T>, Primitive<Iota>)
 {
@@ -654,14 +686,12 @@ join(Primitive<Plus> /*left*/, BoundRight<Operator<T>> right)
 }
 
 
-#if ADD_EACH
 template <typename T>
 static BoundRight<BoundOperator<First,T>>
 join(Primitive<First> /*left*/, BoundRight<Operator<T>> right)
 {
-  return {right.right};
+  return {std::move(right.right)};
 }
-#endif
 
 
 static BoundRight<Times>
@@ -740,9 +770,7 @@ struct Placeholder {
   static Primitive<Times>  times()  { return {}; }
   static Primitive<Iota>   iota()   { return {}; }
   static Primitive<Reduce> reduce() { return {}; }
-#if ADD_EACH
   static Primitive<Each>   each()   { return {}; }
-#endif
 };
 }
 
@@ -768,7 +796,5 @@ int main()
   assert(_(_.first, 1,2,3) == _(1));
   assert(_(_.shape, _(1,2,3), _(4,5,6)) == _(2));
   assert(_(_.shape, 1, _(2,3)) == _(2));
-#if ADD_EACH
   assert(_(_.first, _.each, 1, 2, 3, "ABC", _(9, 8, 7)) == _(1,2,3,'A',9));
-#endif
 }
