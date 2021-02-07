@@ -4,6 +4,8 @@
 #include <vector>
 #include <memory>
 
+#define ADD_PRODUCT 0
+
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -167,10 +169,13 @@ struct Value {
 }
 
 
+using Values = vector<Value>;
+
+
 namespace {
 struct Array {
   vector<int> shape;
-  vector<Value> values;
+  Values values;
 
   Array() = default;
   Array(const Array &) = delete;
@@ -288,7 +293,7 @@ namespace {
 template <typename T>
 struct BoundRight {
   Array right;
-  vector<Value> left = {};
+  Values left = {};
 };
 }
 
@@ -314,6 +319,7 @@ struct Plus;
 struct Times;
 struct Iota;
 struct Reduce;
+struct Product;
 }
 
 
@@ -354,7 +360,7 @@ static Array evaluateBinary(Array left, Array right, Function f)
 }
 
 
-static Array makeArrayFromVector(vector<Value> v)
+static Array makeArrayFromVector(Values v)
 {
   if (v.empty()) {
     assert(false);
@@ -389,7 +395,7 @@ static inline Value evaluate(char arg)
 }
 
 
-static Array evaluate(vector<Value> arg)
+static Array evaluate(Values arg)
 {
   return makeArrayFromVector(std::move(arg));
 }
@@ -559,7 +565,7 @@ static Array evaluate(BoundRight<BoundOperator<First,Each>> arg)
     assert(false);
   }
   else if (arg.right.shape.size() == 1) {
-    vector<Value> result;
+    Values result;
 
     for (auto &x : arg.right.values) {
       if (x.isNumber()) {
@@ -622,7 +628,7 @@ static BoundRight<T> join(Primitive<T>, Array array)
 
 
 template <typename T>
-static BoundRight<T> join(Primitive<T>, vector<Value> right)
+static BoundRight<T> join(Primitive<T>, Values right)
 {
   return { evaluate(std::move(right)) };
 }
@@ -651,9 +657,18 @@ join(Operator<T> /*left*/, BoundRight<Iota> right)
 }
 
 
+#if ADD_PRODUCT
+static BoundRight<List<Primitive<Product>,Function<Times>>
+static void join(Primitive<Product>, BoundRight<Times>)
+{
+  assert(false);
+}
+#endif
+
+
 template <typename T>
 static BoundRight<Operator<T>>
-join(Operator<T>, vector<Value> v)
+join(Operator<T>, Values v)
 {
   return { makeArrayFromVector(std::move(v)) };
 }
@@ -701,18 +716,18 @@ join(Primitive<Times>, BoundRight<Plus> right)
 }
 
 
-static vector<Value> join(Value left, Value right)
+static Values join(Value left, Value right)
 {
-  vector<Value> result;
+  Values result;
   result.push_back(std::move(left));
   result.push_back(std::move(right));
   return result;
 }
 
 
-static vector<Value> join(Value left, vector<Value> right)
+static Values join(Value left, Values right)
 {
-  vector<Value> result;
+  Values result;
   result.push_back(std::move(left));
 
   for (auto &x : right) {
@@ -763,14 +778,15 @@ struct Placeholder {
     return evaluate(combine(std::move(args)...));
   }
 
-  static Primitive<Shape>  shape()  { return {}; }
-  static Primitive<First>  first()  { return {}; }
-  static Primitive<Equal>  equal()  { return {}; }
-  static Primitive<Plus>   plus()   { return {}; }
-  static Primitive<Times>  times()  { return {}; }
-  static Primitive<Iota>   iota()   { return {}; }
-  static Primitive<Reduce> reduce() { return {}; }
-  static Primitive<Each>   each()   { return {}; }
+  static Primitive<Shape>   shape()   { return {}; }
+  static Primitive<First>   first()   { return {}; }
+  static Primitive<Equal>   equal()   { return {}; }
+  static Primitive<Plus>    plus()    { return {}; }
+  static Primitive<Times>   times()   { return {}; }
+  static Primitive<Iota>    iota()    { return {}; }
+  static Primitive<Reduce>  reduce()  { return {}; }
+  static Primitive<Each>    each()    { return {}; }
+  static Primitive<Product> product() { return {}; }
 };
 }
 
@@ -797,4 +813,7 @@ int main()
   assert(_(_.shape, _(1,2,3), _(4,5,6)) == _(2));
   assert(_(_.shape, 1, _(2,3)) == _(2));
   assert(_(_.first, _.each, 1, 2, 3, "ABC", _(9, 8, 7)) == _(1,2,3,'A',9));
+#if ADD_PRODUCT
+  assert(_(1,2,3,_.plus,_.product,_.times,4,5,6) == _(32));
+#endif
 }
