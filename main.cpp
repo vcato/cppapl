@@ -291,15 +291,6 @@ static Array makeCharArray(const char *arg)
 
 namespace {
 template <typename T>
-struct BoundRight {
-  Array right;
-  Values left = {};
-};
-}
-
-
-namespace {
-template <typename T>
 struct Primitive {
 };
 }
@@ -307,6 +298,16 @@ struct Primitive {
 
 template <typename Left, typename Right>
 struct Atop {
+  Left left;
+  Right right;
+};
+
+
+template <typename Left, typename Mid, typename Right>
+struct Fork {
+  Left left;
+  Mid mid;
+  Right right;
 };
 
 
@@ -401,7 +402,7 @@ static Array evaluate(Values arg)
 }
 
 
-static Array evaluate(BoundRight<Shape> arg)
+static Array evaluate(Atop<Primitive<Shape>,Array> arg)
 {
   Array &array = arg.right;
   Array result;
@@ -415,7 +416,7 @@ static Array evaluate(BoundRight<Shape> arg)
 }
 
 
-static Array evaluate(BoundRight<Iota> arg)
+static Array evaluate(Atop<Primitive<Iota>, Array> arg)
 {
   if (arg.right.shape.size() == 0) {
     int n = arg.right.values[0].asNumber();
@@ -435,7 +436,7 @@ static Array evaluate(BoundRight<Iota> arg)
 }
 
 
-static Array evaluate(BoundRight<First> arg)
+static Array evaluate(Atop<Primitive<First>,Array> arg)
 {
   if (arg.right.shape.size() == 0) {
     assert(false);
@@ -449,8 +450,9 @@ static Array evaluate(BoundRight<First> arg)
 }
 
 
-template <typename A, typename B>
-static Atop<A,B> evaluate(Atop<A,B> arg)
+template <typename A, typename B, typename C>
+static Atop<BoundOperator<A,B>,Primitive<C>>
+evaluate(Atop<BoundOperator<A,B>,Primitive<C>> arg)
 {
   return arg;
 }
@@ -475,7 +477,7 @@ static Operator<Each> evaluate(Primitive<Each> (*)())
 }
 
 
-static Array evaluate(BoundRight<Equal> arg)
+static Array evaluate(Fork<Values,Primitive<Equal>,Array> arg)
 {
   auto f = [](auto a, auto b){ return Number(a == b); };
   Array left = makeArrayFromVector(std::move(arg.left));
@@ -484,7 +486,7 @@ static Array evaluate(BoundRight<Equal> arg)
 
 
 template <typename T, typename G>
-static Array evaluateNumberBinary(BoundRight<T> arg, const G &g)
+static Array evaluateNumberBinary(Fork<Values,T,Array> arg, const G &g)
 {
   auto f = [&](const Value& a, const Value& b)
   {
@@ -507,7 +509,7 @@ static Array evaluateNumberBinary(BoundRight<T> arg, const G &g)
 }
 
 
-static Array evaluate(BoundRight<Plus> arg)
+static Array evaluate(Fork<Values,Primitive<Plus>,Array> arg)
 {
   return
     evaluateNumberBinary(
@@ -517,7 +519,7 @@ static Array evaluate(BoundRight<Plus> arg)
 }
 
 
-static Array evaluate(BoundRight<Times> arg)
+static Array evaluate(Fork<Values,Primitive<Times>,Array> arg)
 {
   return
     evaluateNumberBinary(
@@ -533,7 +535,7 @@ static Array evaluate(Array array)
 }
 
 
-static Array evaluate(BoundRight<BoundOperator<Plus,Reduce>> arg)
+static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg)
 {
   const Array &right = arg.right;
 
@@ -555,12 +557,8 @@ static Array evaluate(BoundRight<BoundOperator<Plus,Reduce>> arg)
 }
 
 
-static Array evaluate(BoundRight<BoundOperator<First,Each>> arg)
+static Array evaluate(Atop<BoundOperator<First,Each>,Array> arg)
 {
-  if (!arg.left.empty()) {
-    assert(false);
-  }
-
   if (arg.right.shape.empty()) {
     assert(false);
   }
@@ -614,46 +612,56 @@ static Array evaluate(Value value)
 
 
 template <typename T>
-static BoundRight<T> join(Primitive<T>, Value arg)
+static Atop<Primitive<T>,Array> join(Primitive<T> left, Value right)
 {
-  return { makeScalarArray(std::move(arg)) };
+  return { left, makeScalarArray(std::move(right)) };
 }
 
 
 template <typename T>
-static BoundRight<T> join(Primitive<T>, Array array)
+static Atop<Primitive<T>,Array> join(Primitive<T> left, Array right)
 {
-  return { std::move(array) };
+  return { left, std::move(right) };
 }
 
 
 template <typename T>
-static BoundRight<T> join(Primitive<T>, Values right)
+static Atop<Primitive<T>,Array> join(Primitive<T> left, Values right)
 {
-  return { evaluate(std::move(right)) };
+  return { left, evaluate(std::move(right)) };
 }
 
 
 template <typename T>
-static BoundRight<T> join(Value left, BoundRight<T> right)
+static Fork<Values,T,Array> join(Value left, Atop<T,Array> right)
 {
-  BoundRight<T> result = std::move(right);
+  Values new_left;
+  new_left.push_back(std::move(left));
+  return { std::move(new_left), std::move(right.left), std::move(right.right) };
+}
+
+
+template <typename T>
+static Fork<Values,T,Array> join(Value left, Fork<Values,T,Array> right)
+{
+  Fork<Values,T,Array> result = std::move(right);
   result.left.insert(result.left.begin(), std::move(left));
   return result;
 }
 
 
-static BoundRight<Equal> join(Primitive<Equal> left, BoundRight<Shape> right)
+static Atop<Primitive<Equal>,Array>
+join(Primitive<Equal> left, Atop<Primitive<Shape>,Array> right)
 {
-  return join(std::move(left), evaluate(std::move(right)));
+  return join(left, evaluate(std::move(right)));
 }
 
 
 template <typename T>
-static BoundRight<Operator<T>>
-join(Operator<T> /*left*/, BoundRight<Iota> right)
+static Atop<Operator<T>,Array>
+join(Operator<T> left, Atop<Primitive<Iota>,Array> right)
 {
-  return { evaluate(std::move(right)) };
+  return { left, evaluate(std::move(right)) };
 }
 
 
@@ -667,10 +675,10 @@ static void join(Primitive<Product>, BoundRight<Times>)
 
 
 template <typename T>
-static BoundRight<Operator<T>>
-join(Operator<T>, Values v)
+static Atop<Operator<T>,Array>
+join(Operator<T> left, Values right)
 {
-  return { makeArrayFromVector(std::move(v)) };
+  return { left, makeArrayFromVector(std::move(right)) };
 }
 
 
@@ -690,29 +698,25 @@ join(Primitive<Plus>, Atop<Operator<Reduce>, Primitive<Iota>>)
 
 
 template <typename T>
-static BoundRight<BoundOperator<Plus,T>>
-join(Primitive<Plus> /*left*/, BoundRight<Operator<T>> right)
+static Atop<BoundOperator<Plus,T>,Array>
+join(Primitive<Plus> /*left*/, Atop<Operator<T>,Array> right)
 {
-  if (!right.left.empty()) {
-    assert(false);
-  }
-
-  return { std::move(right.right) };
+  return { {}, std::move(right.right) };
 }
 
 
 template <typename T>
-static BoundRight<BoundOperator<First,T>>
-join(Primitive<First> /*left*/, BoundRight<Operator<T>> right)
+static Atop<BoundOperator<First,T>,Array>
+join(Primitive<First> /*left*/, Atop<Operator<T>,Array> right)
 {
-  return {std::move(right.right)};
+  return {{},std::move(right.right)};
 }
 
 
-static BoundRight<Times>
-join(Primitive<Times>, BoundRight<Plus> right)
+static Atop<Primitive<Times>,Array>
+join(Primitive<Times>, Fork<Values,Primitive<Plus>,Array> right)
 {
-  return { evaluate(std::move(right)) };
+  return { {}, evaluate(std::move(right)) };
 }
 
 
@@ -756,15 +760,18 @@ static auto combine(Arg1 arg1, Arg2 arg2, Args ...args)
 }
 
 
-static BoundRight<BoundOperator<Plus,Reduce>>
+static Atop<BoundOperator<Plus,Reduce>,Array>
 join(
-  Atop<BoundOperator<Plus, Reduce>, Primitive<Iota> >,
+  Atop<BoundOperator<Plus, Reduce>, Primitive<Iota> > left,
   Value right
 )
 {
   return {
+    left.left,
     evaluate(
-      BoundRight<Iota>{ makeScalarArray(std::move(right)) }
+      Atop<Primitive<Iota>,Array>{
+        left.right, makeScalarArray(std::move(right))
+      }
     )
   };
 }
@@ -800,6 +807,7 @@ int main()
   assert(_(1,2,3) == _(1,2,3));
   assert(_(1,2,3).shape == vector<int>{3});
   assert(_(_.shape, 1,2,3) == _(3));
+  assert(_(3, _.equal, 3) == _(1));
   assert(_(3, _.equal, _.shape, 1,2,3) == _(1));
   assert(_(_.shape,1,2,3).shape == vector<int>{1});
   assert(_(1,2,3, _.equal, 1,2,3) == _(1,1,1));
