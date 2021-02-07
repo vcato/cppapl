@@ -4,8 +4,6 @@
 #include <vector>
 #include <memory>
 
-#define ADD_PRODUCT 0
-
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -477,6 +475,12 @@ static Operator<Each> evaluate(Primitive<Each> (*)())
 }
 
 
+static Operator<Product> evaluate(Primitive<Product> (*)())
+{
+  return {};
+}
+
+
 static Array evaluate(Fork<Values,Primitive<Equal>,Array> arg)
 {
   auto f = [](auto a, auto b){ return Number(a == b); };
@@ -665,13 +669,21 @@ join(Operator<T> left, Atop<Primitive<Iota>,Array> right)
 }
 
 
-#if ADD_PRODUCT
-static BoundRight<List<Primitive<Product>,Function<Times>>
-static void join(Primitive<Product>, BoundRight<Times>)
+static Atop< Atop<Operator<Product>,Primitive<Times>>, Array>
+join(Operator<Product>, Atop<Primitive<Times>,Array> right)
 {
-  assert(false);
+  return {{},std::move(right.right)};
 }
-#endif
+
+
+static Atop<Fork<Primitive<Plus>, Operator<Product>, Primitive<Times>>,Array>
+join(
+  Primitive<Plus>,
+  Atop<Atop<Operator<Product>, Primitive<Times> >, Array> right
+)
+{
+  return {{},std::move(right.right)};
+}
 
 
 template <typename T>
@@ -717,6 +729,37 @@ static Atop<Primitive<Times>,Array>
 join(Primitive<Times>, Fork<Values,Primitive<Plus>,Array> right)
 {
   return { {}, evaluate(std::move(right)) };
+}
+
+
+static Array
+evaluate(
+  Fork<
+    Values,
+    Fork<Primitive<Plus>,Operator<Product>,Primitive<Times>>,
+    Array
+  > arg
+)
+{
+  Array left = makeArrayFromVector(std::move(arg.left));
+  Array right = std::move(arg.right);
+
+  if (left.shape.size() == 1 && right.shape.size() == 1) {
+    if (left.values.size() == right.values.size()) {
+      Number result = 0;
+      size_t n = left.values.size();
+
+      for (size_t i=0; i!=n; ++i) {
+        assert(left.values[i].isNumber());
+        assert(right.values[i].isNumber());
+        result += left.values[i].asNumber()*right.values[i].asNumber();
+      }
+
+      return makeScalarArray(result);
+    }
+    assert(false);
+  }
+  assert(false);
 }
 
 
@@ -821,7 +864,5 @@ int main()
   assert(_(_.shape, _(1,2,3), _(4,5,6)) == _(2));
   assert(_(_.shape, 1, _(2,3)) == _(2));
   assert(_(_.first, _.each, 1, 2, 3, "ABC", _(9, 8, 7)) == _(1,2,3,'A',9));
-#if ADD_PRODUCT
   assert(_(1,2,3,_.plus,_.product,_.times,4,5,6) == _(32));
-#endif
 }
