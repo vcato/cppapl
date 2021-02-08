@@ -291,13 +291,6 @@ static Array makeCharArray(const char *arg)
 
 namespace {
 template <typename T>
-struct Primitive {
-};
-}
-
-
-namespace {
-template <typename T>
 struct Function {
 };
 }
@@ -476,25 +469,7 @@ static Function<T> evaluate(Function<T> (*)())
 
 
 template <typename T>
-static Primitive<T> evaluate(Primitive<T> (*)())
-{
-  return {};
-}
-
-
-static Operator<Reduce> evaluate(Primitive<Reduce> (*)())
-{
-  return {};
-}
-
-
-static Operator<Each> evaluate(Primitive<Each> (*)())
-{
-  return {};
-}
-
-
-static Operator<Product> evaluate(Primitive<Product> (*)())
+static Operator<T> evaluate(Operator<T> (*)())
 {
   return {};
 }
@@ -855,11 +830,11 @@ struct Placeholder {
   static Function<Times>   times()   { return {}; }
   static Function<Iota>    iota()    { return {}; }
 #if ADD_ROLL
-  static Primitive<Roll>    roll()    { return {}; }
+  static Function<Roll>    roll()    { return {}; }
 #endif
-  static Primitive<Each>    each()    { return {}; }
-  static Primitive<Reduce>  reduce()  { return {}; }
-  static Primitive<Product> product() { return {}; }
+  static Operator<Each>    each()    { return {}; }
+  static Operator<Reduce>  reduce()  { return {}; }
+  static Operator<Product> product() { return {}; }
 };
 }
 
