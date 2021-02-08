@@ -4,6 +4,8 @@
 #include <vector>
 #include <memory>
 
+#define ADD_ROLL 0
+
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -294,6 +296,13 @@ struct Primitive {
 }
 
 
+namespace {
+template <typename T>
+struct Function {
+};
+}
+
+
 template <typename Left, typename Right>
 struct Atop {
   Left left;
@@ -319,6 +328,9 @@ struct Times;
 struct Iota;
 struct Reduce;
 struct Product;
+#if ADD_ROLL
+struct Roll;
+#endif
 }
 
 
@@ -400,7 +412,7 @@ static Array evaluate(Values arg)
 }
 
 
-static Array evaluate(Atop<Primitive<Shape>,Array> arg)
+static Array evaluate(Atop<Function<Shape>,Array> arg)
 {
   Array &array = arg.right;
   Array result;
@@ -414,7 +426,7 @@ static Array evaluate(Atop<Primitive<Shape>,Array> arg)
 }
 
 
-static Array evaluate(Atop<Primitive<Iota>, Array> arg)
+static Array evaluate(Atop<Function<Iota>, Array> arg)
 {
   if (arg.right.shape.size() == 0) {
     int n = arg.right.values[0].asNumber();
@@ -434,7 +446,7 @@ static Array evaluate(Atop<Primitive<Iota>, Array> arg)
 }
 
 
-static Array evaluate(Atop<Primitive<First>,Array> arg)
+static Array evaluate(Atop<Function<First>,Array> arg)
 {
   if (arg.right.shape.size() == 0) {
     assert(false);
@@ -449,10 +461,17 @@ static Array evaluate(Atop<Primitive<First>,Array> arg)
 
 
 template <typename A, typename B, typename C>
-static Atop<BoundOperator<A,B>,Primitive<C>>
-evaluate(Atop<BoundOperator<A,B>,Primitive<C>> arg)
+static Atop<BoundOperator<A,B>,Function<C>>
+evaluate(Atop<BoundOperator<A,B>,Function<C>> arg)
 {
   return arg;
+}
+
+
+template <typename T>
+static Function<T> evaluate(Function<T> (*)())
+{
+  return {};
 }
 
 
@@ -481,7 +500,7 @@ static Operator<Product> evaluate(Primitive<Product> (*)())
 }
 
 
-static Array evaluate(Fork<Values,Primitive<Equal>,Array> arg)
+static Array evaluate(Fork<Values,Function<Equal>,Array> arg)
 {
   auto f = [](auto a, auto b){ return Number(a == b); };
   Array left = makeArrayFromVector(std::move(arg.left));
@@ -513,7 +532,7 @@ static Array evaluateNumberBinary(Fork<Values,T,Array> arg, const G &g)
 }
 
 
-static Array evaluate(Fork<Values,Primitive<Plus>,Array> arg)
+static Array evaluate(Fork<Values,Function<Plus>,Array> arg)
 {
   return
     evaluateNumberBinary(
@@ -523,7 +542,7 @@ static Array evaluate(Fork<Values,Primitive<Plus>,Array> arg)
 }
 
 
-static Array evaluate(Fork<Values,Primitive<Times>,Array> arg)
+static Array evaluate(Fork<Values,Function<Times>,Array> arg)
 {
   return
     evaluateNumberBinary(
@@ -616,21 +635,21 @@ static Array evaluate(Value value)
 
 
 template <typename T>
-static Atop<Primitive<T>,Array> join(Primitive<T> left, Value right)
+static Atop<Function<T>,Array> join(Function<T> left, Value right)
 {
   return { left, makeScalarArray(std::move(right)) };
 }
 
 
 template <typename T>
-static Atop<Primitive<T>,Array> join(Primitive<T> left, Array right)
+static Atop<Function<T>,Array> join(Function<T> left, Array right)
 {
   return { left, std::move(right) };
 }
 
 
 template <typename T>
-static Atop<Primitive<T>,Array> join(Primitive<T> left, Values right)
+static Atop<Function<T>,Array> join(Function<T> left, Values right)
 {
   return { left, evaluate(std::move(right)) };
 }
@@ -654,8 +673,8 @@ static Fork<Values,T,Array> join(Value left, Fork<Values,T,Array> right)
 }
 
 
-static Atop<Primitive<Equal>,Array>
-join(Primitive<Equal> left, Atop<Primitive<Shape>,Array> right)
+static Atop<Function<Equal>,Array>
+join(Function<Equal> left, Atop<Function<Shape>,Array> right)
 {
   return join(left, evaluate(std::move(right)));
 }
@@ -663,23 +682,23 @@ join(Primitive<Equal> left, Atop<Primitive<Shape>,Array> right)
 
 template <typename T>
 static Atop<Operator<T>,Array>
-join(Operator<T> left, Atop<Primitive<Iota>,Array> right)
+join(Operator<T> left, Atop<Function<Iota>,Array> right)
 {
   return { left, evaluate(std::move(right)) };
 }
 
 
-static Atop< Atop<Operator<Product>,Primitive<Times>>, Array>
-join(Operator<Product>, Atop<Primitive<Times>,Array> right)
+static Atop< Atop<Operator<Product>,Function<Times>>, Array>
+join(Operator<Product>, Atop<Function<Times>,Array> right)
 {
   return {{},std::move(right.right)};
 }
 
 
-static Atop<Fork<Primitive<Plus>, Operator<Product>, Primitive<Times>>,Array>
+static Atop<Fork<Function<Plus>, Operator<Product>, Function<Times>>,Array>
 join(
-  Primitive<Plus>,
-  Atop<Atop<Operator<Product>, Primitive<Times> >, Array> right
+  Function<Plus>,
+  Atop<Atop<Operator<Product>, Function<Times> >, Array> right
 )
 {
   return {{},std::move(right.right)};
@@ -695,15 +714,15 @@ join(Operator<T> left, Values right)
 
 
 template <typename T>
-static Atop<Operator<T>,Primitive<Iota>>
-join(Operator<T>, Primitive<Iota>)
+static Atop<Operator<T>,Function<Iota>>
+join(Operator<T>, Function<Iota>)
 {
   return {};
 }
 
 
-static Atop<BoundOperator<Plus,Reduce>,Primitive<Iota>>
-join(Primitive<Plus>, Atop<Operator<Reduce>, Primitive<Iota>>)
+static Atop<BoundOperator<Plus,Reduce>,Function<Iota>>
+join(Function<Plus>, Atop<Operator<Reduce>, Function<Iota>>)
 {
   return {};
 }
@@ -711,7 +730,7 @@ join(Primitive<Plus>, Atop<Operator<Reduce>, Primitive<Iota>>)
 
 template <typename T>
 static Atop<BoundOperator<Plus,T>,Array>
-join(Primitive<Plus> /*left*/, Atop<Operator<T>,Array> right)
+join(Function<Plus> /*left*/, Atop<Operator<T>,Array> right)
 {
   return { {}, std::move(right.right) };
 }
@@ -719,14 +738,14 @@ join(Primitive<Plus> /*left*/, Atop<Operator<T>,Array> right)
 
 template <typename T>
 static Atop<BoundOperator<First,T>,Array>
-join(Primitive<First> /*left*/, Atop<Operator<T>,Array> right)
+join(Function<First> /*left*/, Atop<Operator<T>,Array> right)
 {
   return {{},std::move(right.right)};
 }
 
 
-static Atop<Primitive<Times>,Array>
-join(Primitive<Times>, Fork<Values,Primitive<Plus>,Array> right)
+static Atop<Function<Times>,Array>
+join(Function<Times>, Fork<Values,Function<Plus>,Array> right)
 {
   return { {}, evaluate(std::move(right)) };
 }
@@ -736,7 +755,7 @@ static Array
 evaluate(
   Fork<
     Values,
-    Fork<Primitive<Plus>,Operator<Product>,Primitive<Times>>,
+    Fork<Function<Plus>,Operator<Product>,Function<Times>>,
     Array
   > arg
 )
@@ -805,14 +824,15 @@ static auto combine(Arg1 arg1, Arg2 arg2, Args ...args)
 
 static Atop<BoundOperator<Plus,Reduce>,Array>
 join(
-  Atop<BoundOperator<Plus, Reduce>, Primitive<Iota> > left,
+  Atop<BoundOperator<Plus, Reduce>, Function<Iota> > left,
   Value right
 )
 {
   return {
     left.left,
     evaluate(
-      Atop<Primitive<Iota>,Array>{
+      Atop<Function<Iota>,Array>
+      {
         left.right, makeScalarArray(std::move(right))
       }
     )
@@ -828,14 +848,17 @@ struct Placeholder {
     return evaluate(combine(std::move(args)...));
   }
 
-  static Primitive<Shape>   shape()   { return {}; }
-  static Primitive<First>   first()   { return {}; }
-  static Primitive<Equal>   equal()   { return {}; }
-  static Primitive<Plus>    plus()    { return {}; }
-  static Primitive<Times>   times()   { return {}; }
-  static Primitive<Iota>    iota()    { return {}; }
-  static Primitive<Reduce>  reduce()  { return {}; }
+  static Function<Shape>   shape()   { return {}; }
+  static Function<First>   first()   { return {}; }
+  static Function<Equal>   equal()   { return {}; }
+  static Function<Plus>    plus()    { return {}; }
+  static Function<Times>   times()   { return {}; }
+  static Function<Iota>    iota()    { return {}; }
+#if ADD_ROLL
+  static Primitive<Roll>    roll()    { return {}; }
+#endif
   static Primitive<Each>    each()    { return {}; }
+  static Primitive<Reduce>  reduce()  { return {}; }
   static Primitive<Product> product() { return {}; }
 };
 }
@@ -865,4 +888,7 @@ int main()
   assert(_(_.shape, 1, _(2,3)) == _(2));
   assert(_(_.first, _.each, 1, 2, 3, "ABC", _(9, 8, 7)) == _(1,2,3,'A',9));
   assert(_(1,2,3,_.plus,_.product,_.times,4,5,6) == _(32));
+#if ADD_ROLL
+  assert(_(_.shape, _.shape, _.roll, 6) == _(0));
+#endif
 }
