@@ -469,6 +469,12 @@ static Array evaluate(Atop<Function<First>,Array> arg, Context &)
 }
 
 
+static int roll(int value, Context &context)
+{
+  return std::uniform_int_distribution<int>(1,value)(context.random_engine);
+}
+
+
 static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
 {
   if (arg.right.shape.empty()) {
@@ -480,14 +486,31 @@ static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
       }
 
       if (value > 0) {
-        int result =
-          std::uniform_int_distribution<int>(1,value)(context.random_engine);
-
-        return makeScalarArray(Number(result));
+        return makeScalarArray(Number(roll(value, context)));
       }
       assert(false);
     }
     assert(false);
+  }
+
+  if (arg.right.shape.size() == 1) {
+    vector<Value> result;
+
+    for (auto &x : arg.right.values) {
+      if (!x.isNumber()) {
+        assert(false);
+      }
+
+      int value = x.asNumber();
+
+      if (value != arg.right.values[0].asNumber()) {
+        assert(false);
+      }
+
+      result.push_back(Number(roll(value, context)));
+    }
+
+    return makeArrayFromVector(std::move(result));
   }
 
   cerr << "arg.right: " << arg.right << "\n";
@@ -901,4 +924,5 @@ int main()
   assert(_(_.first, _.each, 1, 2, 3, "ABC", _(9, 8, 7)) == _(1,2,3,'A',9));
   assert(_(1,2,3,_.plus,_.product,_.times,4,5,6) == _(32));
   assert(_(_.shape, _.shape, _.roll, 6) == _(0));
+  assert(_(_.shape, _.roll, 6, 6) == _(2));
 }
