@@ -3,8 +3,7 @@
 #include <iostream>
 #include <vector>
 #include <memory>
-
-#define ADD_ROLL 0
+#include <random>
 
 using std::vector;
 using std::cerr;
@@ -321,9 +320,7 @@ struct Times;
 struct Iota;
 struct Reduce;
 struct Product;
-#if ADD_ROLL
 struct Roll;
-#endif
 }
 
 
@@ -381,31 +378,50 @@ static Array makeArrayFromVector(Values v)
 }
 
 
-static Value evaluate(int arg)
+namespace {
+struct Context {
+  std::mt19937 random_engine;
+};
+}
+
+
+static Value evaluate(int arg, Context &)
 {
   return Number(arg);
 }
 
 
-static inline Value evaluate(Number arg)
+static inline Value evaluate(Number arg, Context &)
 {
   return arg;
 }
 
 
-static inline Value evaluate(char arg)
+static inline Value evaluate(char arg, Context &)
 {
   return arg;
 }
 
 
-static Array evaluate(Values arg)
+static Array evaluate(const char *arg, Context &)
+{
+  return makeCharArray(arg);
+}
+
+
+static Array evaluate(Value value, Context &)
+{
+  return makeScalarArray(std::move(value));
+}
+
+
+static Array evaluate(Values arg, Context &)
 {
   return makeArrayFromVector(std::move(arg));
 }
 
 
-static Array evaluate(Atop<Function<Shape>,Array> arg)
+static Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
 {
   Array &array = arg.right;
   Array result;
@@ -419,7 +435,7 @@ static Array evaluate(Atop<Function<Shape>,Array> arg)
 }
 
 
-static Array evaluate(Atop<Function<Iota>, Array> arg)
+static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
 {
   if (arg.right.shape.size() == 0) {
     int n = arg.right.values[0].asNumber();
@@ -439,7 +455,7 @@ static Array evaluate(Atop<Function<Iota>, Array> arg)
 }
 
 
-static Array evaluate(Atop<Function<First>,Array> arg)
+static Array evaluate(Atop<Function<First>,Array> arg, Context &)
 {
   if (arg.right.shape.size() == 0) {
     assert(false);
@@ -453,29 +469,55 @@ static Array evaluate(Atop<Function<First>,Array> arg)
 }
 
 
+static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
+{
+  if (arg.right.shape.empty()) {
+    if (arg.right.values[0].isNumber()) {
+      int value = int(arg.right.values[0].asNumber());
+
+      if (value != arg.right.values[0].asNumber()) {
+        assert(false);
+      }
+
+      if (value > 0) {
+        int result =
+          std::uniform_int_distribution<int>(1,value)(context.random_engine);
+
+        return makeScalarArray(Number(result));
+      }
+      assert(false);
+    }
+    assert(false);
+  }
+
+  cerr << "arg.right: " << arg.right << "\n";
+  assert(false);
+}
+
+
 template <typename A, typename B, typename C>
 static Atop<BoundOperator<A,B>,Function<C>>
-evaluate(Atop<BoundOperator<A,B>,Function<C>> arg)
+evaluate(Atop<BoundOperator<A,B>,Function<C>> arg, Context &)
 {
   return arg;
 }
 
 
 template <typename T>
-static Function<T> evaluate(Function<T> (*)())
+static Function<T> evaluate(Function<T> (*)(), Context &)
 {
   return {};
 }
 
 
 template <typename T>
-static Operator<T> evaluate(Operator<T> (*)())
+static Operator<T> evaluate(Operator<T> (*)(), Context &)
 {
   return {};
 }
 
 
-static Array evaluate(Fork<Values,Function<Equal>,Array> arg)
+static Array evaluate(Fork<Values,Function<Equal>,Array> arg, Context &)
 {
   auto f = [](auto a, auto b){ return Number(a == b); };
   Array left = makeArrayFromVector(std::move(arg.left));
@@ -507,7 +549,7 @@ static Array evaluateNumberBinary(Fork<Values,T,Array> arg, const G &g)
 }
 
 
-static Array evaluate(Fork<Values,Function<Plus>,Array> arg)
+static Array evaluate(Fork<Values,Function<Plus>,Array> arg, Context &)
 {
   return
     evaluateNumberBinary(
@@ -517,7 +559,7 @@ static Array evaluate(Fork<Values,Function<Plus>,Array> arg)
 }
 
 
-static Array evaluate(Fork<Values,Function<Times>,Array> arg)
+static Array evaluate(Fork<Values,Function<Times>,Array> arg, Context &)
 {
   return
     evaluateNumberBinary(
@@ -527,13 +569,13 @@ static Array evaluate(Fork<Values,Function<Times>,Array> arg)
 }
 
 
-static Array evaluate(Array array)
+static Array evaluate(Array array, Context &)
 {
   return array;
 }
 
 
-static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg)
+static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg, Context &)
 {
   const Array &right = arg.right;
 
@@ -555,7 +597,7 @@ static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg)
 }
 
 
-static Array evaluate(Atop<BoundOperator<First,Each>,Array> arg)
+static Array evaluate(Atop<BoundOperator<First,Each>,Array> arg, Context &)
 {
   if (arg.right.shape.empty()) {
     assert(false);
@@ -597,41 +639,30 @@ static Array evaluate(Atop<BoundOperator<First,Each>,Array> arg)
 }
 
 
-static Array evaluate(const char *arg)
-{
-  return makeCharArray(arg);
-}
-
-
-static Array evaluate(Value value)
-{
-  return makeScalarArray(std::move(value));
-}
-
-
 template <typename T>
-static Atop<Function<T>,Array> join(Function<T> left, Value right)
+static Atop<Function<T>,Array> join(Function<T> left, Value right, Context &)
 {
   return { left, makeScalarArray(std::move(right)) };
 }
 
 
 template <typename T>
-static Atop<Function<T>,Array> join(Function<T> left, Array right)
+static Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
 {
   return { left, std::move(right) };
 }
 
 
 template <typename T>
-static Atop<Function<T>,Array> join(Function<T> left, Values right)
+static Atop<Function<T>,Array>
+join(Function<T> left, Values right, Context &context)
 {
-  return { left, evaluate(std::move(right)) };
+  return { left, evaluate(std::move(right), context) };
 }
 
 
 template <typename T>
-static Fork<Values,T,Array> join(Value left, Atop<T,Array> right)
+static Fork<Values,T,Array> join(Value left, Atop<T,Array> right, Context &)
 {
   Values new_left;
   new_left.push_back(std::move(left));
@@ -640,7 +671,7 @@ static Fork<Values,T,Array> join(Value left, Atop<T,Array> right)
 
 
 template <typename T>
-static Fork<Values,T,Array> join(Value left, Fork<Values,T,Array> right)
+static Fork<Values,T,Array> join(Value left, Fork<Values,T,Array> right, Context &)
 {
   Fork<Values,T,Array> result = std::move(right);
   result.left.insert(result.left.begin(), std::move(left));
@@ -648,23 +679,24 @@ static Fork<Values,T,Array> join(Value left, Fork<Values,T,Array> right)
 }
 
 
-static Atop<Function<Equal>,Array>
-join(Function<Equal> left, Atop<Function<Shape>,Array> right)
+template <typename T1, typename T2>
+static Atop<Function<T1>,Array>
+join(Function<T1> left, Atop<Function<T2>,Array> right, Context &context)
 {
-  return join(left, evaluate(std::move(right)));
+  return join(left, evaluate(std::move(right), context), context);
 }
 
 
 template <typename T>
 static Atop<Operator<T>,Array>
-join(Operator<T> left, Atop<Function<Iota>,Array> right)
+join(Operator<T> left, Atop<Function<Iota>,Array> right, Context &context)
 {
-  return { left, evaluate(std::move(right)) };
+  return { left, evaluate(std::move(right), context) };
 }
 
 
 static Atop< Atop<Operator<Product>,Function<Times>>, Array>
-join(Operator<Product>, Atop<Function<Times>,Array> right)
+join(Operator<Product>, Atop<Function<Times>,Array> right, Context &)
 {
   return {{},std::move(right.right)};
 }
@@ -673,7 +705,8 @@ join(Operator<Product>, Atop<Function<Times>,Array> right)
 static Atop<Fork<Function<Plus>, Operator<Product>, Function<Times>>,Array>
 join(
   Function<Plus>,
-  Atop<Atop<Operator<Product>, Function<Times> >, Array> right
+  Atop<Atop<Operator<Product>, Function<Times> >, Array> right,
+  Context &
 )
 {
   return {{},std::move(right.right)};
@@ -682,7 +715,7 @@ join(
 
 template <typename T>
 static Atop<Operator<T>,Array>
-join(Operator<T> left, Values right)
+join(Operator<T> left, Values right, Context &)
 {
   return { left, makeArrayFromVector(std::move(right)) };
 }
@@ -690,14 +723,14 @@ join(Operator<T> left, Values right)
 
 template <typename T>
 static Atop<Operator<T>,Function<Iota>>
-join(Operator<T>, Function<Iota>)
+join(Operator<T>, Function<Iota>, Context &)
 {
   return {};
 }
 
 
 static Atop<BoundOperator<Plus,Reduce>,Function<Iota>>
-join(Function<Plus>, Atop<Operator<Reduce>, Function<Iota>>)
+join(Function<Plus>, Atop<Operator<Reduce>, Function<Iota>>, Context &)
 {
   return {};
 }
@@ -705,7 +738,7 @@ join(Function<Plus>, Atop<Operator<Reduce>, Function<Iota>>)
 
 template <typename T>
 static Atop<BoundOperator<Plus,T>,Array>
-join(Function<Plus> /*left*/, Atop<Operator<T>,Array> right)
+join(Function<Plus> /*left*/, Atop<Operator<T>,Array> right, Context &)
 {
   return { {}, std::move(right.right) };
 }
@@ -713,16 +746,16 @@ join(Function<Plus> /*left*/, Atop<Operator<T>,Array> right)
 
 template <typename T>
 static Atop<BoundOperator<First,T>,Array>
-join(Function<First> /*left*/, Atop<Operator<T>,Array> right)
+join(Function<First> /*left*/, Atop<Operator<T>,Array> right, Context &)
 {
   return {{},std::move(right.right)};
 }
 
 
 static Atop<Function<Times>,Array>
-join(Function<Times>, Fork<Values,Function<Plus>,Array> right)
+join(Function<Times>, Fork<Values,Function<Plus>,Array> right, Context &context)
 {
-  return { {}, evaluate(std::move(right)) };
+  return { {}, evaluate(std::move(right), context) };
 }
 
 
@@ -733,6 +766,7 @@ evaluate(
     Fork<Function<Plus>,Operator<Product>,Function<Times>>,
     Array
   > arg
+  , Context &
 )
 {
   Array left = makeArrayFromVector(std::move(arg.left));
@@ -757,7 +791,7 @@ evaluate(
 }
 
 
-static Values join(Value left, Value right)
+static Values join(Value left, Value right, Context &)
 {
   Values result;
   result.push_back(std::move(left));
@@ -766,7 +800,7 @@ static Values join(Value left, Value right)
 }
 
 
-static Values join(Value left, Values right)
+static Values join(Value left, Values right, Context &)
 {
   Values result;
   result.push_back(std::move(left));
@@ -780,19 +814,20 @@ static Values join(Value left, Values right)
 
 
 template <typename Arg>
-static auto combine(Arg arg)
+static auto combine(Context &context, Arg arg)
 {
-  return evaluate(std::move(arg));
+  return evaluate(std::move(arg), context);
 }
 
 
 template <typename Arg1, typename Arg2, typename ...Args>
-static auto combine(Arg1 arg1, Arg2 arg2, Args ...args)
+static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
   return
     join(
-      evaluate(std::move(arg1)),
-      combine(std::move(arg2), std::move(args)...)
+      evaluate(std::move(arg1), context),
+      combine(context, std::move(arg2), std::move(args)...),
+      context
     );
 }
 
@@ -800,7 +835,8 @@ static auto combine(Arg1 arg1, Arg2 arg2, Args ...args)
 static Atop<BoundOperator<Plus,Reduce>,Array>
 join(
   Atop<BoundOperator<Plus, Reduce>, Function<Iota> > left,
-  Value right
+  Value right,
+  Context &context
 )
 {
   return {
@@ -810,6 +846,7 @@ join(
       {
         left.right, makeScalarArray(std::move(right))
       }
+      , context
     )
   };
 }
@@ -817,10 +854,12 @@ join(
 
 namespace {
 struct Placeholder {
+  Context context;
+
   template <typename ...Args>
   auto operator()(Args ...args)
   {
-    return evaluate(combine(std::move(args)...));
+    return evaluate(combine(context, std::move(args)...), context);
   }
 
   static Function<Shape>   shape()   { return {}; }
@@ -829,9 +868,7 @@ struct Placeholder {
   static Function<Plus>    plus()    { return {}; }
   static Function<Times>   times()   { return {}; }
   static Function<Iota>    iota()    { return {}; }
-#if ADD_ROLL
   static Function<Roll>    roll()    { return {}; }
-#endif
   static Operator<Each>    each()    { return {}; }
   static Operator<Reduce>  reduce()  { return {}; }
   static Operator<Product> product() { return {}; }
@@ -863,7 +900,5 @@ int main()
   assert(_(_.shape, 1, _(2,3)) == _(2));
   assert(_(_.first, _.each, 1, 2, 3, "ABC", _(9, 8, 7)) == _(1,2,3,'A',9));
   assert(_(1,2,3,_.plus,_.product,_.times,4,5,6) == _(32));
-#if ADD_ROLL
   assert(_(_.shape, _.shape, _.roll, 6) == _(0));
-#endif
 }
