@@ -42,6 +42,22 @@ struct Value {
     number, character, array_ptr
   };
 
+  friend ostream& operator<<(ostream &stream, Type type)
+  {
+    switch (type) {
+      case Type::number:
+        stream << "number";
+        break;
+      case Type::character:
+        assert(false);
+      case Type::array_ptr:
+        stream << "array_ptr";
+        break;
+    }
+
+    return stream;
+  }
+
   Type type;
 
   union {
@@ -71,6 +87,12 @@ struct Value {
   : type(arg.type)
   {
     createFrom(std::move(arg));
+  }
+
+  explicit Value(const Value &arg)
+  : type(arg.type)
+  {
+    createFrom(arg);
   }
 
   bool isArray() const { return type == Type::array_ptr; }
@@ -106,6 +128,8 @@ struct Value {
   friend bool operator==(const Value &a, const Value &b)
   {
     if (a.type != b.type) {
+      cerr << "a.type: " << a.type << "\n";
+      cerr << "b.type: " << b.type << "\n";
       assert(false);
     }
 
@@ -155,6 +179,24 @@ struct Value {
     }
   }
 
+  void createFrom(const Value &arg)
+  {
+    assert(type == arg.type);
+
+    switch (type) {
+      case Type::number:
+        new (&number) auto(arg.number);
+        break;
+      case Type::character:
+        new (&character) auto(arg.character);
+        break;
+      case Type::array_ptr:
+        assert(arg.array_ptr);
+        new (&array_ptr) auto(std::make_unique<Array>(*arg.array_ptr));
+        break;
+    }
+  }
+
   Value& operator=(Value arg)
   {
     destroy();
@@ -177,7 +219,7 @@ struct Array {
   Values values;
 
   Array() = default;
-  Array(const Array &) = delete;
+  explicit Array(const Array &) = default;
   Array(Array &&) = default;
 
 };
@@ -321,6 +363,7 @@ struct Iota;
 struct Reduce;
 struct Product;
 struct Roll;
+struct Replicate;
 }
 
 
@@ -472,6 +515,64 @@ static Array evaluate(Atop<Function<First>,Array> arg, Context &)
 static int roll(int value, Context &context)
 {
   return std::uniform_int_distribution<int>(1,value)(context.random_engine);
+}
+
+
+namespace{
+template <typename T>
+struct Optional {
+  bool has_value;
+
+  Optional(T arg)
+  : has_value(true),
+    value(std::move(arg))
+  {
+  }
+
+  Optional()
+  : has_value(false)
+  {
+  }
+
+  ~Optional()
+  {
+    if (has_value) {
+      value.~T();
+    }
+  }
+
+  bool operator!() const
+  {
+    return !has_value;
+  }
+
+  T &operator*()
+  {
+    assert(has_value);
+    return value;
+  }
+
+  union {
+    T value;
+  };
+};
+}
+
+
+static Optional<int> maybeInteger(const Value &v)
+{
+  if (!v.isNumber()) {
+    assert(false);
+  }
+
+  Number n = v.asNumber();
+  int int_n = int(n);
+
+  if (int_n != n) {
+    assert(false);
+  }
+
+  return int_n;
 }
 
 
@@ -783,6 +884,39 @@ join(Function<Times>, Fork<Values,Function<Plus>,Array> right, Context &context)
 
 
 static Array
+evaluate(Fork<Values, Function<Replicate>, Array> arg, Context &)
+{
+  Array left = makeArrayFromVector(std::move(arg.left));
+  Array right = std::move(arg.right);
+
+  if (left.shape.empty() && right.shape.empty()) {
+    Array result;
+
+    if (!left.values[0].isNumber()) {
+      assert(false);
+    }
+
+    Optional<int> maybe_n = maybeInteger(left.values[0]);
+
+    if (!maybe_n) {
+      assert(false);
+    }
+
+    int n = *maybe_n;
+
+    for (int i=0; i!=n; ++i) {
+      result.values.push_back(Value(right.values[0]));
+    }
+
+    result.shape = {int(result.values.size())};
+    return result;
+  }
+
+  assert(false);
+}
+
+
+static Array
 evaluate(
   Fork<
     Values,
@@ -885,16 +1019,17 @@ struct Placeholder {
     return evaluate(combine(context, std::move(args)...), context);
   }
 
-  static Function<Shape>   shape()   { return {}; }
-  static Function<First>   first()   { return {}; }
-  static Function<Equal>   equal()   { return {}; }
-  static Function<Plus>    plus()    { return {}; }
-  static Function<Times>   times()   { return {}; }
-  static Function<Iota>    iota()    { return {}; }
-  static Function<Roll>    roll()    { return {}; }
-  static Operator<Each>    each()    { return {}; }
-  static Operator<Reduce>  reduce()  { return {}; }
-  static Operator<Product> product() { return {}; }
+  static Function<Shape>     shape()     { return {}; }
+  static Function<First>     first()     { return {}; }
+  static Function<Equal>     equal()     { return {}; }
+  static Function<Plus>      plus()      { return {}; }
+  static Function<Times>     times()     { return {}; }
+  static Function<Iota>      iota()      { return {}; }
+  static Function<Roll>      roll()      { return {}; }
+  static Function<Replicate> replicate() { return {}; }
+  static Operator<Each>      each()      { return {}; }
+  static Operator<Reduce>    reduce()    { return {}; }
+  static Operator<Product>   product()   { return {}; }
 };
 }
 
@@ -925,4 +1060,5 @@ int main()
   assert(_(1,2,3,_.plus,_.product,_.times,4,5,6) == _(32));
   assert(_(_.shape, _.shape, _.roll, 6) == _(0));
   assert(_(_.shape, _.roll, 6, 6) == _(2));
+  assert(_(3, _.replicate, 4) == (_(4,4,4)));
 }
