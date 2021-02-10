@@ -292,11 +292,6 @@ static bool operator==(const Array &a, const Array &b)
 
   return true;
 }
-namespace {
-template <typename T>
-struct Operator {
-};
-}
 
 
 namespace {
@@ -332,7 +327,21 @@ static Array makeCharArray(const char *arg)
 
 namespace {
 template <typename T>
+struct Keyword {
+};
+}
+
+
+namespace {
+template <typename T>
 struct Function {
+};
+}
+
+
+namespace {
+template <typename T>
+struct Operator {
 };
 }
 
@@ -364,6 +373,8 @@ struct Reduce;
 struct Product;
 struct Roll;
 struct Replicate;
+struct Empty;
+struct Drop;
 }
 
 
@@ -404,10 +415,12 @@ static Array evaluateBinary(Array left, Array right, Function f)
 }
 
 
-static Array makeArrayFromVector(Values v)
+static Array makeArrayFromValues(Values v)
 {
   if (v.empty()) {
-    assert(false);
+    Array result;
+    result.shape = {0};
+    return result;
   }
 
   if (v.size() == 1) {
@@ -460,7 +473,7 @@ static Array evaluate(Value value, Context &)
 
 static Array evaluate(Values arg, Context &)
 {
-  return makeArrayFromVector(std::move(arg));
+  return makeArrayFromValues(std::move(arg));
 }
 
 
@@ -493,7 +506,7 @@ static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
     return result;
   }
 
-  Array result;
+  cerr << "arg.right: " << arg.right << "\n";
   assert(false);
 }
 
@@ -555,6 +568,20 @@ struct Optional {
   union {
     T value;
   };
+
+  friend bool operator!=(const Optional &a, const Optional &b)
+  {
+    if (a.has_value != b.has_value) {
+      assert(false);
+    }
+
+    if (a.has_value) {
+      assert(b.has_value);
+      return a.value != b.value;
+    }
+
+    assert(false);
+  }
 };
 }
 
@@ -611,7 +638,7 @@ static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
       result.push_back(Number(roll(value, context)));
     }
 
-    return makeArrayFromVector(std::move(result));
+    return makeArrayFromValues(std::move(result));
   }
 
   cerr << "arg.right: " << arg.right << "\n";
@@ -641,16 +668,74 @@ static Operator<T> evaluate(Operator<T> (*)(), Context &)
 }
 
 
-static Array evaluate(Fork<Values,Function<Equal>,Array> arg, Context &)
+template <typename T>
+static Keyword<T> evaluate(Keyword<T> (*)(), Context &)
+{
+  return {};
+}
+
+
+static Array evaluate(Keyword<Empty>, Context &)
+{
+  return makeArrayFromValues({});
+}
+
+
+static Array evaluate(Fork<Array,Function<Equal>,Array> arg, Context &)
 {
   auto f = [](auto a, auto b){ return Number(a == b); };
-  Array left = makeArrayFromVector(std::move(arg.left));
-  return evaluateBinary(std::move(left), std::move(arg.right), f);
+  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
+}
+
+
+static Array
+evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
+{
+  if (arg.left.shape.size() == 0) {
+    if (arg.right.shape.size() == 1) {
+      Optional<int> maybe_n_to_drop = maybeInteger(arg.left.values[0]);
+
+      if (!maybe_n_to_drop) {
+        assert(false);
+      }
+
+      int n_to_drop = *maybe_n_to_drop;
+
+      Array result;
+
+      if (arg.right.shape[0] <= n_to_drop) {
+        result.shape = {0};
+        return result;
+      }
+
+      result.shape = {arg.right.shape[0] - n_to_drop};
+      auto iter = arg.right.values.begin();
+      iter += n_to_drop;
+
+      for (; iter != arg.right.values.end(); ++iter) {
+        result.values.push_back(std::move(*iter));
+      }
+
+      return result;
+    }
+  }
+
+  assert(false);
+}
+
+
+template <typename T>
+static Array evaluate(Fork<Values,Function<T>,Array> arg, Context &context)
+{
+  Array left = makeArrayFromValues(std::move(arg.left));
+  using Return = Fork<Array, Function<T>, Array>;
+  auto x = Return{std::move(left), arg.mid, std::move(arg.right)};
+  return evaluate(std::move(x), context);
 }
 
 
 template <typename T, typename G>
-static Array evaluateNumberBinary(Fork<Values,T,Array> arg, const G &g)
+static Array evaluateNumberBinary(Fork<Array,T,Array> arg, const G &g)
 {
   auto f = [&](const Value& a, const Value& b)
   {
@@ -664,16 +749,11 @@ static Array evaluateNumberBinary(Fork<Values,T,Array> arg, const G &g)
     return Value();
   };
 
-  return
-    evaluateBinary(
-      makeArrayFromVector(std::move(arg.left)),
-      std::move(arg.right),
-      f
-    );
+  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
 }
 
 
-static Array evaluate(Fork<Values,Function<Plus>,Array> arg, Context &)
+static Array evaluate(Fork<Array,Function<Plus>,Array> arg, Context &)
 {
   return
     evaluateNumberBinary(
@@ -683,7 +763,7 @@ static Array evaluate(Fork<Values,Function<Plus>,Array> arg, Context &)
 }
 
 
-static Array evaluate(Fork<Values,Function<Times>,Array> arg, Context &)
+static Array evaluate(Fork<Array,Function<Times>,Array> arg, Context &)
 {
   return
     evaluateNumberBinary(
@@ -753,7 +833,7 @@ static Array evaluate(Atop<BoundOperator<First,Each>,Array> arg, Context &)
       }
     }
 
-    return makeArrayFromVector(std::move(result));
+    return makeArrayFromValues(std::move(result));
   }
   else {
     assert(false);
@@ -795,7 +875,8 @@ static Fork<Values,T,Array> join(Value left, Atop<T,Array> right, Context &)
 
 
 template <typename T>
-static Fork<Values,T,Array> join(Value left, Fork<Values,T,Array> right, Context &)
+static Fork<Values,T,Array>
+join(Value left, Fork<Values,T,Array> right, Context &)
 {
   Fork<Values,T,Array> result = std::move(right);
   result.left.insert(result.left.begin(), std::move(left));
@@ -841,7 +922,7 @@ template <typename T>
 static Atop<Operator<T>,Array>
 join(Operator<T> left, Values right, Context &)
 {
-  return { left, makeArrayFromVector(std::move(right)) };
+  return { left, makeArrayFromValues(std::move(right)) };
 }
 
 
@@ -877,16 +958,20 @@ join(Function<First> /*left*/, Atop<Operator<T>,Array> right, Context &)
 
 
 static Atop<Function<Times>,Array>
-join(Function<Times>, Fork<Values,Function<Plus>,Array> right, Context &context)
+join(
+  Function<Times>,
+  Fork<Values,Function<Plus>,Array> right,
+  Context &context
+)
 {
   return { {}, evaluate(std::move(right), context) };
 }
 
 
 static Array
-evaluate(Fork<Values, Function<Replicate>, Array> arg, Context &)
+evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
 {
-  Array left = makeArrayFromVector(std::move(arg.left));
+  Array left = std::move(arg.left);
   Array right = std::move(arg.right);
 
   if (left.shape.empty() && right.shape.empty()) {
@@ -926,7 +1011,7 @@ evaluate(
   , Context &
 )
 {
-  Array left = makeArrayFromVector(std::move(arg.left));
+  Array left = makeArrayFromValues(std::move(arg.left));
   Array right = std::move(arg.right);
 
   if (left.shape.size() == 1 && right.shape.size() == 1) {
@@ -1027,6 +1112,8 @@ struct Placeholder {
   static Function<Iota>      iota()      { return {}; }
   static Function<Roll>      roll()      { return {}; }
   static Function<Replicate> replicate() { return {}; }
+  static Keyword<Empty>      empty()     { return {}; }
+  static Function<Drop>      drop()      { return {}; }
   static Operator<Each>      each()      { return {}; }
   static Operator<Reduce>    reduce()    { return {}; }
   static Operator<Product>   product()   { return {}; }
@@ -1061,4 +1148,8 @@ int main()
   assert(_(_.shape, _.shape, _.roll, 6) == _(0));
   assert(_(_.shape, _.roll, 6, 6) == _(2));
   assert(_(3, _.replicate, 4) == (_(4,4,4)));
+  assert(_(1, _.drop, _.iota, 5) == (_(2,3,4,5)));
+  assert(_(2, _.drop, _.iota, 5) == (_(3,4,5)));
+  assert(_(2, _.drop, 4, 5) == _(_.empty));
+  assert(_(3, _.drop, 4, 5) == _(_.empty));
 }
