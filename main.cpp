@@ -5,10 +5,13 @@
 #include <memory>
 #include <random>
 
+#define ADD_OUTER 0
+
 using std::vector;
 using std::cerr;
 using std::ostream;
 using Number = float;
+
 
 template <typename T>
 static ostream& operator<<(ostream& s, const vector<T> &v)
@@ -371,6 +374,9 @@ struct Times;
 struct Iota;
 struct Reduce;
 struct Product;
+#if ADD_OUTER
+struct Outer;
+#endif
 struct Roll;
 struct Replicate;
 struct Empty;
@@ -725,10 +731,10 @@ evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 
 
 template <typename T>
-static Array evaluate(Fork<Values,Function<T>,Array> arg, Context &context)
+static Array evaluate(Fork<Values,T,Array> arg, Context &context)
 {
   Array left = makeArrayFromValues(std::move(arg.left));
-  using Return = Fork<Array, Function<T>, Array>;
+  using Return = Fork<Array, T, Array>;
   auto x = Return{std::move(left), arg.mid, std::move(arg.right)};
   return evaluate(std::move(x), context);
 }
@@ -900,7 +906,7 @@ join(Operator<T> left, Atop<Function<Iota>,Array> right, Context &context)
 }
 
 
-static Atop< Atop<Operator<Product>,Function<Times>>, Array>
+static Atop<Atop<Operator<Product>,Function<Times>>, Array>
 join(Operator<Product>, Atop<Function<Times>,Array> right, Context &)
 {
   return {{},std::move(right.right)};
@@ -916,6 +922,26 @@ join(
 {
   return {{},std::move(right.right)};
 }
+
+
+#if ADD_OUTER
+static Atop<Fork<Operator<Outer>, Operator<Product>, Function<Times>>,Array>
+join(
+  Operator<Outer> left,
+  Atop<Atop<Operator<Product>, Function<Times> >, Array> right,
+  Context&
+)
+{
+  return {
+    {
+      std::move(left),
+      std::move(right.left.left),
+      std::move(right.left.right)
+    },
+    std::move(right.right)
+  };
+}
+#endif
 
 
 template <typename T>
@@ -1055,6 +1081,16 @@ static Values join(Value left, Values right, Context &)
 }
 
 
+#if ADD_OUTER
+template <typename T>
+static Fork<Operator<Outer>,Operator<Product>,Function<T>>
+join(Operator<Outer>, Atop<Operator<Product>,Function<T>>, Context &)
+{
+  assert(false);
+}
+#endif
+
+
 template <typename Arg>
 static auto combine(Context &context, Arg arg)
 {
@@ -1117,6 +1153,9 @@ struct Placeholder {
   static Operator<Each>      each()      { return {}; }
   static Operator<Reduce>    reduce()    { return {}; }
   static Operator<Product>   product()   { return {}; }
+#if ADD_OUTER
+  static Operator<Outer>     outer()   { return {}; }
+#endif
 };
 }
 
@@ -1152,4 +1191,11 @@ int main()
   assert(_(2, _.drop, _.iota, 5) == (_(3,4,5)));
   assert(_(2, _.drop, 4, 5) == _(_.empty));
   assert(_(3, _.drop, 4, 5) == _(_.empty));
+
+#if ADD_OUTER
+  assert(
+    _(_(_.iota, 2), _.outer, _.product, _.times, _.iota, 2) ==
+    _(2,2, _.reshape, 1, 2, 2, 4)
+  );
+#endif
 }
