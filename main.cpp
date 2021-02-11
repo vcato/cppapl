@@ -1097,36 +1097,66 @@ join(
 }
 
 
+static void addNCopiesTo(vector<Value> &result_values, int n, const Value &v)
+{
+  assert(n >= 0);
+
+  for (int i=0; i!=n; ++i) {
+    result_values.push_back(Value(v));
+  }
+}
+
+
+static void
+replicateInto(
+  Values &result_values,
+  const Values &left_values,
+  const Values &right_values,
+  int n
+)
+{
+  for (int i=0; i!=n; ++i) {
+    Optional<int> maybe_count = maybeInteger(left_values[i]);
+
+    if (!maybe_count) {
+      assert(false);
+    }
+
+    addNCopiesTo(result_values, *maybe_count, right_values[i]);
+  }
+}
+
+
 static Array
 evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
 {
   Array left = std::move(arg.left);
   Array right = std::move(arg.right);
+  Array result;
 
   if (left.shape.empty() && right.shape.empty()) {
-    Array result;
 
     if (!left.values[0].isNumber()) {
       assert(false);
     }
 
-    Optional<int> maybe_n = maybeInteger(left.values[0]);
-
-    if (!maybe_n) {
+    int n = 1;
+    replicateInto(result.values, left.values, right.values, n);
+  }
+  else if (left.shape.size() == 1 && right.shape.size() == 1) {
+    if (left.shape[0] != right.shape[0]) {
       assert(false);
     }
 
-    int n = *maybe_n;
-
-    for (int i=0; i!=n; ++i) {
-      result.values.push_back(Value(right.values[0]));
-    }
-
-    result.shape = {int(result.values.size())};
-    return result;
+    int n = left.shape[0];
+    replicateInto(result.values, left.values, right.values, n);
+  }
+  else {
+    assert(false);
   }
 
-  assert(false);
+  result.shape = { int(result.values.size()) };
+  return result;
 }
 
 
@@ -1298,4 +1328,6 @@ int main()
     _(_(_.iota, 2), _.outer, _.product, _.times, _.iota, 2) ==
     _(2,2, _.reshape, 1, 2, 2, 4)
   );
+
+  assert(_(1,0,2, _.replicate, 1,2,3) == _(1,3,3));
 }
