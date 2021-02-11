@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include <random>
+#include <sstream>
 
 #define ADD_OUTER 0
 
@@ -267,6 +268,21 @@ static ostream& operator<<(ostream& stream, const Array &a)
   else if (a.shape.size() == 1) {
     stream << a.values;
   }
+  else if (a.shape.size() == 2) {
+    stream << "[";
+
+    for (int i=0; i!=a.shape[0]; ++i) {
+      stream << " [";
+
+      for (int j=0; j!=a.shape[1]; ++j) {
+        stream << " " << a.values[i*a.shape[1] + j];
+      }
+
+      stream << " ]";
+    }
+
+    stream << " ]";
+  }
   else {
     stream << "shape: " << a.shape << "\n";
     assert(false);
@@ -366,6 +382,7 @@ struct Fork {
 
 namespace {
 struct Shape;
+struct Reshape;
 struct First;
 struct Each;
 struct Equal;
@@ -730,6 +747,41 @@ evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 }
 
 
+static int product(const vector<int> &arg)
+{
+  return std::accumulate(arg.begin(), arg.end(), 1, std::multiplies<>());
+}
+
+
+static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
+{
+  if (arg.left.shape.size() != 1) {
+    assert(false);
+  }
+
+  Array result;
+
+  for (Value &x : arg.left.values) {
+    Optional<int> maybe_int_x = maybeInteger(x);
+
+    if (!maybe_int_x) {
+      assert(false);
+    }
+
+    result.shape.push_back(*maybe_int_x);
+  }
+
+  int n = product(result.shape);
+  result.values.resize(n);
+
+  for (int i=0; i!=n; ++i) {
+    result.values[i] = Value(arg.right.values[i % arg.right.values.size()]);
+  }
+
+  return result;
+}
+
+
 template <typename T>
 static Array evaluate(Fork<Values,T,Array> arg, Context &context)
 {
@@ -983,14 +1035,15 @@ join(Function<First> /*left*/, Atop<Operator<T>,Array> right, Context &)
 }
 
 
-static Atop<Function<Times>,Array>
+template<typename T, typename U>
+static Atop<Function<T>,Array>
 join(
-  Function<Times>,
-  Fork<Values,Function<Plus>,Array> right,
+  Function<T> left,
+  Fork<Values,Function<U>,Array> right,
   Context &context
 )
 {
-  return { {}, evaluate(std::move(right), context) };
+  return { std::move(left), evaluate(std::move(right), context) };
 }
 
 
@@ -1141,6 +1194,7 @@ struct Placeholder {
   }
 
   static Function<Shape>     shape()     { return {}; }
+  static Function<Reshape>   reshape()   { return {}; }
   static Function<First>     first()     { return {}; }
   static Function<Equal>     equal()     { return {}; }
   static Function<Plus>      plus()      { return {}; }
@@ -1157,6 +1211,15 @@ struct Placeholder {
   static Operator<Outer>     outer()   { return {}; }
 #endif
 };
+}
+
+
+template <typename T>
+static std::string str(const T &x)
+{
+  std::ostringstream stream;
+  stream << x;
+  return stream.str();
 }
 
 
@@ -1191,7 +1254,7 @@ int main()
   assert(_(2, _.drop, _.iota, 5) == (_(3,4,5)));
   assert(_(2, _.drop, 4, 5) == _(_.empty));
   assert(_(3, _.drop, 4, 5) == _(_.empty));
-
+  assert(str(_(2,2, _.reshape, 1,2,3,4)) == "[ [ 1 2 ] [ 3 4 ] ]");
 #if ADD_OUTER
   assert(
     _(_(_.iota, 2), _.outer, _.product, _.times, _.iota, 2) ==
