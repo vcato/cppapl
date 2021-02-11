@@ -6,8 +6,6 @@
 #include <random>
 #include <sstream>
 
-#define ADD_OUTER 0
-
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -322,6 +320,10 @@ struct BoundOperator {
 
 static Array makeScalarArray(Value value)
 {
+  if (value.isArray()) {
+    return std::move(value.asArray());
+  }
+
   Array result;
   result.values.push_back(std::move(value));
   return result;
@@ -391,9 +393,7 @@ struct Times;
 struct Iota;
 struct Reduce;
 struct Product;
-#if ADD_OUTER
 struct Outer;
-#endif
 struct Roll;
 struct Replicate;
 struct Empty;
@@ -782,6 +782,58 @@ static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
 }
 
 
+static Array
+evaluate(
+  Fork<
+    Array,
+    Fork<Operator<Outer>, Operator<Product>, Function<Times> >,
+    Array
+  > arg,
+  Context&
+)
+{
+  if (arg.left.shape.size() != 1) {
+    cerr << "arg.left: " << arg.left << "\n";
+    cerr << "arg.left.shape.size(): " << arg.left.shape.size() << "\n";
+    assert(false);
+  }
+
+  int n_rows = arg.left.shape[0];
+
+  if (arg.right.shape.size() != 1) {
+    assert(false);
+  }
+
+  int n_cols = arg.right.shape[0];
+
+  Array result;
+  result.shape = { n_rows, n_cols };
+  result.values.resize(n_rows * n_cols);
+
+  for (auto &x : arg.left.values) {
+    if (!x.isNumber()) {
+      assert(false);
+    }
+  }
+
+  for (auto &x : arg.right.values) {
+    if (!x.isNumber()) {
+      assert(false);
+    }
+  }
+
+  for (int i=0; i!=n_rows; ++i) {
+    for (int j=0; j!=n_cols; ++j) {
+      Number a = arg.left.values[i].asNumber();
+      Number b = arg.right.values[j].asNumber();
+      result.values[i*n_cols + j] = a * b;
+    }
+  }
+
+  return result;
+}
+
+
 template <typename T>
 static Array evaluate(Fork<Values,T,Array> arg, Context &context)
 {
@@ -976,7 +1028,6 @@ join(
 }
 
 
-#if ADD_OUTER
 static Atop<Fork<Operator<Outer>, Operator<Product>, Function<Times>>,Array>
 join(
   Operator<Outer> left,
@@ -993,7 +1044,6 @@ join(
     std::move(right.right)
   };
 }
-#endif
 
 
 template <typename T>
@@ -1134,16 +1184,6 @@ static Values join(Value left, Values right, Context &)
 }
 
 
-#if ADD_OUTER
-template <typename T>
-static Fork<Operator<Outer>,Operator<Product>,Function<T>>
-join(Operator<Outer>, Atop<Operator<Product>,Function<T>>, Context &)
-{
-  assert(false);
-}
-#endif
-
-
 template <typename Arg>
 static auto combine(Context &context, Arg arg)
 {
@@ -1207,9 +1247,7 @@ struct Placeholder {
   static Operator<Each>      each()      { return {}; }
   static Operator<Reduce>    reduce()    { return {}; }
   static Operator<Product>   product()   { return {}; }
-#if ADD_OUTER
   static Operator<Outer>     outer()   { return {}; }
-#endif
 };
 }
 
@@ -1255,10 +1293,9 @@ int main()
   assert(_(2, _.drop, 4, 5) == _(_.empty));
   assert(_(3, _.drop, 4, 5) == _(_.empty));
   assert(str(_(2,2, _.reshape, 1,2,3,4)) == "[ [ 1 2 ] [ 3 4 ] ]");
-#if ADD_OUTER
+
   assert(
     _(_(_.iota, 2), _.outer, _.product, _.times, _.iota, 2) ==
     _(2,2, _.reshape, 1, 2, 2, 4)
   );
-#endif
 }
