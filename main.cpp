@@ -6,6 +6,8 @@
 #include <random>
 #include <sstream>
 
+#define CHANGE_REFERENCE 0
+
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -365,6 +367,15 @@ struct Function {
 }
 
 
+#if CHANGE_REFERENCE
+namespace {
+struct Var {
+  Value *const ptr;
+};
+}
+#endif
+
+
 namespace {
 template <typename T>
 struct Operator {
@@ -611,10 +622,18 @@ static Value evaluate(int arg, Context &)
 }
 
 
+#if CHANGE_REFERENCE
+static Value evaluate(Var arg, Context &)
+{
+  assert(arg.ptr);
+  return Value(*arg.ptr);
+}
+#else
 static Value* evaluate(Value *arg, Context &)
 {
   return arg;
 }
+#endif
 
 
 static inline Value evaluate(Number arg, Context &)
@@ -843,7 +862,7 @@ static Array
 evaluate(
   Fork<
     Array,
-    Fork<Operator<Outer>, Operator<Product>, Function<Times> >,
+    Function<Fork<Operator<Outer>, Operator<Product>, Function<Times> > >,
     Array
   > arg,
   Context&
@@ -1125,12 +1144,14 @@ join(Function<T> left, Values right, Context &context)
 }
 
 
+#if !CHANGE_REFERENCE
 static Value join(Value* left, Atop<Keyword<Assign>, Array> right, Context&)
 {
   assert(left);
   *left = std::move(right.right);
   return Value(*left);
 }
+#endif
 
 
 static Atop<Keyword<Assign>,Array>
@@ -1197,19 +1218,19 @@ join(
 }
 
 
-static Atop<Fork<Operator<Outer>, Operator<Product>, Function<Times>>,Array>
+static
+Atop<
+  Function<Fork<Operator<Outer>, Operator<Product>, Function<Times>>>,
+  Array
+>
 join(
-  Operator<Outer> left,
+  Operator<Outer> /*left*/,
   Atop<Atop<Operator<Product>, Function<Times> >, Array> right,
   Context&
 )
 {
   return {
-    {
-      std::move(left),
-      std::move(right.left.left),
-      std::move(right.left.right)
-    },
+    {},
     std::move(right.right)
   };
 }
@@ -1288,11 +1309,50 @@ static Values join(Value left, Values right, Context &)
 }
 
 
+#if CHANGE_REFERENCE
+static Value combine(Context &, int arg)
+{
+  return Value(arg);
+}
+
+
+template <typename T>
+static Function<T> combine(Context &, Function<T> arg)
+{
+  return arg;
+}
+
+
+template <typename T>
+static Keyword<T> combine(Context &, Keyword<T> arg)
+{
+  return arg;
+}
+
+
+static Array combine(Context &, Array arg)
+{
+  return arg;
+}
+
+
+static Value combine(Context &, Value arg)
+{
+  return arg;
+}
+
+
+static Var combine(Context &, Var arg)
+{
+  return arg;
+}
+#else
 template <typename Arg>
 static auto combine(Context &context, Arg arg)
 {
   return evaluate(std::move(arg), context);
 }
+#endif
 
 
 template <typename Arg1, typename Arg2, typename ...Args>
@@ -1327,6 +1387,45 @@ join(
 }
 
 
+#if CHANGE_REFERENCE
+template <typename T>
+struct MakeRValue {
+  T operator()(T &arg) const
+  {
+    return T(arg);
+  }
+};
+
+
+template <typename T>
+struct MakeRValue<const T&> {
+  T operator()(const T &arg) const
+  {
+    return T(arg);
+  }
+};
+
+
+template <typename T>
+struct MakeRValue<T&> {
+  Var operator()(T &arg) const
+  {
+    return Var{&arg};
+  }
+};
+
+
+template <size_t n>
+struct MakeRValue<const char (&)[n]> {
+  Array operator()(const char *arg) const
+  {
+    return makeCharArray(arg);
+  }
+};
+#endif
+
+
+#if !CHANGE_REFERENCE
 template <typename T>
 static T rvalue(const T &arg)
 {
@@ -1338,17 +1437,30 @@ static Array rvalue(const char *p)
 {
   return makeCharArray(p);
 }
+#endif
 
 
 namespace {
 struct Placeholder {
   Context context;
 
+#if CHANGE_REFERENCE
+  template <typename ...Args>
+  auto operator()(Args &&...args)
+  {
+    return
+      evaluate(
+        combine(context, MakeRValue<Args>()(args)...),
+        context
+      );
+  }
+#else
   template <typename ...Args>
   auto operator()(const Args &...args)
   {
     return evaluate(combine(context, rvalue(args)...), context);
   }
+#endif
 
   static constexpr Function<Shape>     shape = {};
   static constexpr Function<Reshape>   reshape = {};
@@ -1441,11 +1553,19 @@ int main()
 
   assert(_(1,0,2, _.replicate, 1,2,3) == _(1,3,3));
 
+#if CHANGE_REFERENCE
+  {
+    Value R = 5;
+    _(R, _.assign, 1, _.drop, _.iota, 5);
+    assert(_(R) == _(2,3,4,5));
+  }
+#else
   {
     Value R = 5;
     _(&R, _.assign, 1, _.drop, _.iota, 5);
     assert(_(R) == _(2,3,4,5));
   }
+#endif
 
   assert(_(1, _.member_of, 1) == _(1));
   assert(_(1, _.member_of, 1,2,3) == _(1));
