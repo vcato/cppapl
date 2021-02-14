@@ -401,6 +401,7 @@ struct Product;
 struct Outer;
 struct Roll;
 struct Replicate;
+struct MemberOf;
 struct Empty;
 struct Assign;
 struct Drop;
@@ -889,6 +890,33 @@ evaluate(
 }
 
 
+static bool elementOf(const Value &a, const Values &b)
+{
+  for (const Value &x : b) {
+    if (a == x) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+
+static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
+{
+  Array result;
+  result.shape = arg.left.shape;
+  size_t n = arg.left.values.size();
+  result.values.resize(n);
+
+  for (size_t i=0; i!=n; ++i) {
+    result.values[i] = elementOf(arg.left.values[i], arg.right.values);
+  }
+
+  return result;
+}
+
+
 template <typename T>
 static Array evaluate(Fork<Values,T,Array> arg, Context &context)
 {
@@ -1309,6 +1337,7 @@ struct Placeholder {
   static constexpr Function<Iota>      iota = {};
   static constexpr Function<Roll>      roll = {};
   static constexpr Function<Replicate> replicate = {};
+  static constexpr Function<MemberOf>  member_of = {};
   static constexpr Keyword<Empty>      empty = {};
   static constexpr Keyword<Assign>     assign = {};
   static constexpr Function<Drop>      drop = {};
@@ -1332,6 +1361,7 @@ constexpr Function<Replicate> Placeholder::replicate;
 constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Function<Drop>      Placeholder::drop;
+constexpr Function<MemberOf>  Placeholder::member_of;
 constexpr Operator<Each>      Placeholder::each;
 constexpr Operator<Reduce>    Placeholder::reduce;
 constexpr Operator<Product>   Placeholder::product;
@@ -1392,4 +1422,8 @@ int main()
     _(&R, _.assign, 1, _.drop, _.iota, 5);
     assert(_(R) == _(2,3,4,5));
   }
+
+  assert(_(1, _.member_of, 1) == _(1));
+  assert(_(1, _.member_of, 1,2,3) == _(1));
+  assert(_(1,2,3, _.member_of, 2) == _(0,1,0));
 }
