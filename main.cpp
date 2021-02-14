@@ -402,6 +402,7 @@ struct Outer;
 struct Roll;
 struct Replicate;
 struct MemberOf;
+struct Not;
 struct Empty;
 struct Assign;
 struct Drop;
@@ -1081,6 +1082,27 @@ evaluate(
 }
 
 
+static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
+{
+  Array result;
+  result.shape = arg.right.shape;
+  size_t n = arg.right.values.size();
+  result.values.resize(n);
+
+  for (size_t i=0; i!=n; ++i) {
+    Optional<int> maybe_x = maybeInteger(arg.right.values[0]);
+
+    if (maybe_x!=0 && maybe_x!=1) {
+      assert(false);
+    }
+
+    result.values[i] = !*maybe_x;
+  }
+
+  return result;
+}
+
+
 template <typename T>
 static Atop<Function<T>,Array> join(Function<T> left, Value right, Context &)
 {
@@ -1338,6 +1360,7 @@ struct Placeholder {
   static constexpr Function<Roll>      roll = {};
   static constexpr Function<Replicate> replicate = {};
   static constexpr Function<MemberOf>  member_of = {};
+  static constexpr Function<Not>       isnot = {};
   static constexpr Keyword<Empty>      empty = {};
   static constexpr Keyword<Assign>     assign = {};
   static constexpr Function<Drop>      drop = {};
@@ -1362,6 +1385,7 @@ constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Function<Drop>      Placeholder::drop;
 constexpr Function<MemberOf>  Placeholder::member_of;
+constexpr Function<Not>       Placeholder::isnot;
 constexpr Operator<Each>      Placeholder::each;
 constexpr Operator<Reduce>    Placeholder::reduce;
 constexpr Operator<Product>   Placeholder::product;
@@ -1426,4 +1450,19 @@ int main()
   assert(_(1, _.member_of, 1) == _(1));
   assert(_(1, _.member_of, 1,2,3) == _(1));
   assert(_(1,2,3, _.member_of, 2) == _(0,1,0));
+
+  assert(_(_.isnot, 1) == _(0));
+
+#if 0
+  {
+    Value R = 5;
+
+    assert(
+      _(
+        (_.isnot, R, _.member_of, R, _.outer, _.product, _.times, R),
+        _.replicate, &R, _.assign, 1, _.drop, _.iota, R
+      ) == _(2,3,5)
+    );
+  }
+#endif
 }
