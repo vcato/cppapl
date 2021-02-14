@@ -6,6 +6,8 @@
 #include <random>
 #include <sstream>
 
+#define ADD_ASSIGN 0
+
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -77,6 +79,13 @@ struct Value {
   : type(Type::number), number(arg)
   {
   }
+
+#if ADD_ASSIGN
+  Value(int arg)
+  : type(Type::number), number(arg)
+  {
+  }
+#endif
 
   Value(char arg)
   : type(Type::character), character(arg)
@@ -397,6 +406,9 @@ struct Outer;
 struct Roll;
 struct Replicate;
 struct Empty;
+#if ADD_ASSIGN
+struct Assign;
+#endif
 struct Drop;
 }
 
@@ -461,90 +473,6 @@ namespace {
 struct Context {
   std::mt19937 random_engine;
 };
-}
-
-
-static Value evaluate(int arg, Context &)
-{
-  return Number(arg);
-}
-
-
-static inline Value evaluate(Number arg, Context &)
-{
-  return arg;
-}
-
-
-static inline Value evaluate(char arg, Context &)
-{
-  return arg;
-}
-
-
-static Array evaluate(const char *arg, Context &)
-{
-  return makeCharArray(arg);
-}
-
-
-static Array evaluate(Value value, Context &)
-{
-  return makeScalarArray(std::move(value));
-}
-
-
-static Array evaluate(Values arg, Context &)
-{
-  return makeArrayFromValues(std::move(arg));
-}
-
-
-static Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
-{
-  Array &array = arg.right;
-  Array result;
-  result.shape = { int(array.shape.size()) };
-
-  for (int x : array.shape) {
-    result.values.push_back(Number(x));
-  }
-
-  return result;
-}
-
-
-static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
-{
-  if (arg.right.shape.size() == 0) {
-    int n = arg.right.values[0].asNumber();
-    assert(n >= 0);
-    Array result;
-    result.shape = {n};
-
-    for (int i=1; i<=n; ++i) {
-      result.values.push_back(Number(i));
-    }
-
-    return result;
-  }
-
-  cerr << "arg.right: " << arg.right << "\n";
-  assert(false);
-}
-
-
-static Array evaluate(Atop<Function<First>,Array> arg, Context &)
-{
-  if (arg.right.shape.size() == 0) {
-    assert(false);
-  }
-
-  if (arg.right.shape.size() == 1) {
-    return makeScalarArray(std::move(arg.right.values[0]));
-  }
-
-  assert(false);
 }
 
 
@@ -623,6 +551,153 @@ static Optional<int> maybeInteger(const Value &v)
   }
 
   return int_n;
+}
+
+
+static int product(const vector<int> &arg)
+{
+  return std::accumulate(arg.begin(), arg.end(), 1, std::multiplies<>());
+}
+
+
+static void addNCopiesTo(vector<Value> &result_values, int n, const Value &v)
+{
+  assert(n >= 0);
+
+  for (int i=0; i!=n; ++i) {
+    result_values.push_back(Value(v));
+  }
+}
+
+
+static void
+replicateInto(
+  Values &result_values,
+  const Values &left_values,
+  const Values &right_values,
+  int n
+)
+{
+  for (int i=0; i!=n; ++i) {
+    Optional<int> maybe_count = maybeInteger(left_values[i]);
+
+    if (!maybe_count) {
+      assert(false);
+    }
+
+    addNCopiesTo(result_values, *maybe_count, right_values[i]);
+  }
+}
+
+
+template <typename T, typename G>
+static Array evaluateNumberBinary(Fork<Array,T,Array> arg, const G &g)
+{
+  auto f = [&](const Value& a, const Value& b)
+  {
+    if (a.isNumber() && b.isNumber()) {
+      return Value(g(a.asNumber(), b.asNumber()));
+    }
+    else {
+      assert(false);
+    }
+
+    return Value();
+  };
+
+  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
+}
+
+
+static Value evaluate(int arg, Context &)
+{
+  return Number(arg);
+}
+
+
+#if ADD_ASSIGN
+static Value* evaluate(Value *arg, Context &)
+{
+  return arg;
+}
+#endif
+
+
+static inline Value evaluate(Number arg, Context &)
+{
+  return arg;
+}
+
+
+static inline Value evaluate(char arg, Context &)
+{
+  return arg;
+}
+
+
+static Array evaluate(const char *arg, Context &)
+{
+  return makeCharArray(arg);
+}
+
+
+static Array evaluate(Value value, Context &)
+{
+  return makeScalarArray(std::move(value));
+}
+
+
+static Array evaluate(Values arg, Context &)
+{
+  return makeArrayFromValues(std::move(arg));
+}
+
+
+static Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
+{
+  Array &array = arg.right;
+  Array result;
+  result.shape = { int(array.shape.size()) };
+
+  for (int x : array.shape) {
+    result.values.push_back(Number(x));
+  }
+
+  return result;
+}
+
+
+static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
+{
+  if (arg.right.shape.size() == 0) {
+    int n = arg.right.values[0].asNumber();
+    assert(n >= 0);
+    Array result;
+    result.shape = {n};
+
+    for (int i=1; i<=n; ++i) {
+      result.values.push_back(Number(i));
+    }
+
+    return result;
+  }
+
+  cerr << "arg.right: " << arg.right << "\n";
+  assert(false);
+}
+
+
+static Array evaluate(Atop<Function<First>,Array> arg, Context &)
+{
+  if (arg.right.shape.size() == 0) {
+    assert(false);
+  }
+
+  if (arg.right.shape.size() == 1) {
+    return makeScalarArray(std::move(arg.right.values[0]));
+  }
+
+  assert(false);
 }
 
 
@@ -747,12 +822,6 @@ evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 }
 
 
-static int product(const vector<int> &arg)
-{
-  return std::accumulate(arg.begin(), arg.end(), 1, std::multiplies<>());
-}
-
-
 static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
 {
   if (arg.left.shape.size() != 1) {
@@ -841,25 +910,6 @@ static Array evaluate(Fork<Values,T,Array> arg, Context &context)
   using Return = Fork<Array, T, Array>;
   auto x = Return{std::move(left), arg.mid, std::move(arg.right)};
   return evaluate(std::move(x), context);
-}
-
-
-template <typename T, typename G>
-static Array evaluateNumberBinary(Fork<Array,T,Array> arg, const G &g)
-{
-  auto f = [&](const Value& a, const Value& b)
-  {
-    if (a.isNumber() && b.isNumber()) {
-      return Value(g(a.asNumber(), b.asNumber()));
-    }
-    else {
-      assert(false);
-    }
-
-    return Value();
-  };
-
-  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
 }
 
 
@@ -953,6 +1003,70 @@ static Array evaluate(Atop<BoundOperator<First,Each>,Array> arg, Context &)
 }
 
 
+static Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
+{
+  Array left = std::move(arg.left);
+  Array right = std::move(arg.right);
+  Array result;
+
+  if (left.shape.empty() && right.shape.empty()) {
+
+    if (!left.values[0].isNumber()) {
+      assert(false);
+    }
+
+    int n = 1;
+    replicateInto(result.values, left.values, right.values, n);
+  }
+  else if (left.shape.size() == 1 && right.shape.size() == 1) {
+    if (left.shape[0] != right.shape[0]) {
+      assert(false);
+    }
+
+    int n = left.shape[0];
+    replicateInto(result.values, left.values, right.values, n);
+  }
+  else {
+    assert(false);
+  }
+
+  result.shape = { int(result.values.size()) };
+  return result;
+}
+
+
+static Array
+evaluate(
+  Fork<
+    Values,
+    Fork<Function<Plus>,Operator<Product>,Function<Times>>,
+    Array
+  > arg
+  , Context &
+)
+{
+  Array left = makeArrayFromValues(std::move(arg.left));
+  Array right = std::move(arg.right);
+
+  if (left.shape.size() == 1 && right.shape.size() == 1) {
+    if (left.values.size() == right.values.size()) {
+      Number result = 0;
+      size_t n = left.values.size();
+
+      for (size_t i=0; i!=n; ++i) {
+        assert(left.values[i].isNumber());
+        assert(right.values[i].isNumber());
+        result += left.values[i].asNumber()*right.values[i].asNumber();
+      }
+
+      return makeScalarArray(result);
+    }
+    assert(false);
+  }
+  assert(false);
+}
+
+
 template <typename T>
 static Atop<Function<T>,Array> join(Function<T> left, Value right, Context &)
 {
@@ -973,6 +1087,29 @@ join(Function<T> left, Values right, Context &context)
 {
   return { left, evaluate(std::move(right), context) };
 }
+
+
+#if ADD_ASSIGN
+static Value join(Value* left, Atop<Keyword<Assign>, Array> right, Context&)
+{
+  assert(left);
+  *left = std::move(right.right);
+  return Value(*left);
+}
+#endif
+
+
+#if ADD_ASSIGN
+static Atop<Keyword<Assign>,Array>
+join(
+  Keyword<Assign> left,
+  Fork<Values, Function<Drop>, Array> right,
+  Context& context
+)
+{
+  return { std::move(left), evaluate(std::move(right), context) };
+}
+#endif
 
 
 template <typename T>
@@ -1097,101 +1234,6 @@ join(
 }
 
 
-static void addNCopiesTo(vector<Value> &result_values, int n, const Value &v)
-{
-  assert(n >= 0);
-
-  for (int i=0; i!=n; ++i) {
-    result_values.push_back(Value(v));
-  }
-}
-
-
-static void
-replicateInto(
-  Values &result_values,
-  const Values &left_values,
-  const Values &right_values,
-  int n
-)
-{
-  for (int i=0; i!=n; ++i) {
-    Optional<int> maybe_count = maybeInteger(left_values[i]);
-
-    if (!maybe_count) {
-      assert(false);
-    }
-
-    addNCopiesTo(result_values, *maybe_count, right_values[i]);
-  }
-}
-
-
-static Array
-evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
-{
-  Array left = std::move(arg.left);
-  Array right = std::move(arg.right);
-  Array result;
-
-  if (left.shape.empty() && right.shape.empty()) {
-
-    if (!left.values[0].isNumber()) {
-      assert(false);
-    }
-
-    int n = 1;
-    replicateInto(result.values, left.values, right.values, n);
-  }
-  else if (left.shape.size() == 1 && right.shape.size() == 1) {
-    if (left.shape[0] != right.shape[0]) {
-      assert(false);
-    }
-
-    int n = left.shape[0];
-    replicateInto(result.values, left.values, right.values, n);
-  }
-  else {
-    assert(false);
-  }
-
-  result.shape = { int(result.values.size()) };
-  return result;
-}
-
-
-static Array
-evaluate(
-  Fork<
-    Values,
-    Fork<Function<Plus>,Operator<Product>,Function<Times>>,
-    Array
-  > arg
-  , Context &
-)
-{
-  Array left = makeArrayFromValues(std::move(arg.left));
-  Array right = std::move(arg.right);
-
-  if (left.shape.size() == 1 && right.shape.size() == 1) {
-    if (left.values.size() == right.values.size()) {
-      Number result = 0;
-      size_t n = left.values.size();
-
-      for (size_t i=0; i!=n; ++i) {
-        assert(left.values[i].isNumber());
-        assert(right.values[i].isNumber());
-        result += left.values[i].asNumber()*right.values[i].asNumber();
-      }
-
-      return makeScalarArray(result);
-    }
-    assert(false);
-  }
-  assert(false);
-}
-
-
 static Values join(Value left, Value right, Context &)
 {
   Values result;
@@ -1257,12 +1299,37 @@ namespace {
 struct Placeholder {
   Context context;
 
+#if 0
+  template <typename ...Args>
+  auto operator()(const Args & ...args)
+#else
   template <typename ...Args>
   auto operator()(Args ...args)
+#endif
   {
     return evaluate(combine(context, std::move(args)...), context);
   }
 
+#if 0
+  static Function<Shape>     shape;
+  static Function<Reshape>   reshape;
+  static Function<First>     first;
+  static Function<Equal>     equal;
+  static Function<Plus>      plus;
+  static Function<Times>     times;
+  static Function<Iota>      iota;
+  static Function<Roll>      roll;
+  static Function<Replicate> replicate;
+  static Keyword<Empty>      empty;
+#if ADD_ASSIGN
+  static Keyword<Assign>     assign;
+#endif
+  static Function<Drop>      drop;
+  static Operator<Each>      each;
+  static Operator<Reduce>    reduce;
+  static Operator<Product>   product;
+  static Operator<Outer>     outer;
+#else
   static Function<Shape>     shape()     { return {}; }
   static Function<Reshape>   reshape()   { return {}; }
   static Function<First>     first()     { return {}; }
@@ -1273,11 +1340,15 @@ struct Placeholder {
   static Function<Roll>      roll()      { return {}; }
   static Function<Replicate> replicate() { return {}; }
   static Keyword<Empty>      empty()     { return {}; }
+#if ADD_ASSIGN
+  static Keyword<Assign>     assign()    { return {}; }
+#endif
   static Function<Drop>      drop()      { return {}; }
   static Operator<Each>      each()      { return {}; }
   static Operator<Reduce>    reduce()    { return {}; }
   static Operator<Product>   product()   { return {}; }
   static Operator<Outer>     outer()   { return {}; }
+#endif
 };
 }
 
@@ -1330,4 +1401,13 @@ int main()
   );
 
   assert(_(1,0,2, _.replicate, 1,2,3) == _(1,3,3));
+
+#if ADD_ASSIGN
+  {
+    Value R = 5;
+    _(&R, _.assign, 1, _.drop, _.iota, 5);
+    cerr << "R: " << R << "\n";
+    cerr << "X: " << _(R, _.outer, _.product, _.times, R) << "\n";
+  }
+#endif
 }
