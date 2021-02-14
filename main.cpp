@@ -753,23 +753,23 @@ evaluate(Atop<BoundOperator<A,B>,Function<C>> arg, Context &)
 
 
 template <typename T>
-static Function<T> evaluate(Function<T> (*)(), Context &)
+static Function<T> evaluate(Function<T> arg, Context &)
 {
-  return {};
+  return std::move(arg);
 }
 
 
 template <typename T>
-static Operator<T> evaluate(Operator<T> (*)(), Context &)
+static Operator<T> evaluate(Operator<T> arg, Context &)
 {
-  return {};
+  return std::move(arg);
 }
 
 
 template <typename T>
-static Keyword<T> evaluate(Keyword<T> (*)(), Context &)
+static Keyword<T> evaluate(Keyword<T> arg, Context &)
 {
-  return {};
+  return std::move(arg);
 }
 
 
@@ -1299,18 +1299,12 @@ namespace {
 struct Placeholder {
   Context context;
 
-#if 0
-  template <typename ...Args>
-  auto operator()(const Args & ...args)
-#else
   template <typename ...Args>
   auto operator()(Args ...args)
-#endif
   {
     return evaluate(combine(context, std::move(args)...), context);
   }
 
-#if 0
   static Function<Shape>     shape;
   static Function<Reshape>   reshape;
   static Function<First>     first;
@@ -1329,26 +1323,6 @@ struct Placeholder {
   static Operator<Reduce>    reduce;
   static Operator<Product>   product;
   static Operator<Outer>     outer;
-#else
-  static Function<Shape>     shape()     { return {}; }
-  static Function<Reshape>   reshape()   { return {}; }
-  static Function<First>     first()     { return {}; }
-  static Function<Equal>     equal()     { return {}; }
-  static Function<Plus>      plus()      { return {}; }
-  static Function<Times>     times()     { return {}; }
-  static Function<Iota>      iota()      { return {}; }
-  static Function<Roll>      roll()      { return {}; }
-  static Function<Replicate> replicate() { return {}; }
-  static Keyword<Empty>      empty()     { return {}; }
-#if ADD_ASSIGN
-  static Keyword<Assign>     assign()    { return {}; }
-#endif
-  static Function<Drop>      drop()      { return {}; }
-  static Operator<Each>      each()      { return {}; }
-  static Operator<Reduce>    reduce()    { return {}; }
-  static Operator<Product>   product()   { return {}; }
-  static Operator<Outer>     outer()   { return {}; }
-#endif
 };
 }
 
