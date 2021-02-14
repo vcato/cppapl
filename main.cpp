@@ -1459,7 +1459,7 @@ int main()
 
     assert(
       _(
-        (_.isnot, R, _.member_of, R, _.outer, _.product, _.times, R),
+        _(_.isnot, R, _.member_of, R, _.outer, _.product, _.times, R),
         _.replicate, &R, _.assign, 1, _.drop, _.iota, R
       ) == _(2,3,5)
     );
