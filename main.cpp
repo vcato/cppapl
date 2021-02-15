@@ -1305,6 +1305,13 @@ static Values join(Value left, Values right, Context &)
 }
 
 
+template <typename T>
+static auto join(Var left, T right, Context &context)
+{
+  return join(Value(*left.ptr), std::move(right), context);
+}
+
+
 static Value combine(Context &, int arg)
 {
   return Value(arg);
@@ -1525,6 +1532,11 @@ int main()
   {
     Value R = 3;
     assert(_(_.iota, R) == _(1,2,3));
+  }
+
+  {
+    Value R = 1;
+    assert(_(R, _.plus, R) == _(2));
   }
 
 #if 0
