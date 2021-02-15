@@ -1113,6 +1113,13 @@ static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
 
 
 template <typename T>
+static Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
+{
+  return { left, std::move(right) };
+}
+
+
+template <typename T>
 static Atop<Function<T>,Array> join(Function<T> left, Value right, Context &)
 {
   return { left, makeScalarArray(std::move(right)) };
@@ -1120,9 +1127,10 @@ static Atop<Function<T>,Array> join(Function<T> left, Value right, Context &)
 
 
 template <typename T>
-static Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
+static auto join(T left, Var right, Context &context)
 {
-  return { left, std::move(right) };
+  assert(right.ptr);
+  return join(left, Value(*right.ptr), context);
 }
 
 
@@ -1513,6 +1521,11 @@ int main()
   assert(_(1,2,3, _.member_of, 2) == _(0,1,0));
 
   assert(_(_.isnot, 1) == _(0));
+
+  {
+    Value R = 3;
+    assert(_(_.iota, R) == _(1,2,3));
+  }
 
 #if 0
   {
