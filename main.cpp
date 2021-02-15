@@ -6,8 +6,6 @@
 #include <random>
 #include <sstream>
 
-#define CHANGE_REFERENCE 0
-
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -31,6 +29,9 @@ static ostream& operator<<(ostream& s, const vector<T> &v)
 namespace {
 struct Array;
 }
+
+
+static bool operator==(const Array &a, const Array &b);
 
 
 template <typename T>
@@ -148,9 +149,7 @@ struct Value {
       case Type::character:
         return a.character == b.character;
       case Type::array_ptr:
-        cerr << "a.array_ptr.get(): " << a.array_ptr.get() << "\n";
-        cerr << "b.array_ptr.get(): " << b.array_ptr.get() << "\n";
-        assert(false);
+        return *a.array_ptr == *b.array_ptr;
     }
     assert(false);
   }
@@ -367,13 +366,11 @@ struct Function {
 }
 
 
-#if CHANGE_REFERENCE
 namespace {
 struct Var {
   Value *const ptr;
 };
 }
-#endif
 
 
 namespace {
@@ -622,18 +619,11 @@ static Value evaluate(int arg, Context &)
 }
 
 
-#if CHANGE_REFERENCE
-static Value evaluate(Var arg, Context &)
+static Var evaluate(Var arg, Context &)
 {
   assert(arg.ptr);
-  return Value(*arg.ptr);
-}
-#else
-static Value* evaluate(Value *arg, Context &)
-{
   return arg;
 }
-#endif
 
 
 static inline Value evaluate(Number arg, Context &)
@@ -1144,14 +1134,12 @@ join(Function<T> left, Values right, Context &context)
 }
 
 
-#if !CHANGE_REFERENCE
-static Value join(Value* left, Atop<Keyword<Assign>, Array> right, Context&)
+static Value join(Var left, Atop<Keyword<Assign>, Array> right, Context&)
 {
-  assert(left);
-  *left = std::move(right.right);
-  return Value(*left);
+  assert(left.ptr);
+  *left.ptr = std::move(right.right);
+  return Value(*left.ptr);
 }
-#endif
 
 
 static Atop<Keyword<Assign>,Array>
@@ -1309,7 +1297,6 @@ static Values join(Value left, Values right, Context &)
 }
 
 
-#if CHANGE_REFERENCE
 static Value combine(Context &, int arg)
 {
   return Value(arg);
@@ -1336,23 +1323,10 @@ static Array combine(Context &, Array arg)
 }
 
 
-static Value combine(Context &, Value arg)
-{
-  return arg;
-}
-
-
 static Var combine(Context &, Var arg)
 {
   return arg;
 }
-#else
-template <typename Arg>
-static auto combine(Context &context, Arg arg)
-{
-  return evaluate(std::move(arg), context);
-}
-#endif
 
 
 template <typename Arg1, typename Arg2, typename ...Args>
@@ -1387,7 +1361,6 @@ join(
 }
 
 
-#if CHANGE_REFERENCE
 template <typename T>
 struct MakeRValue {
   T operator()(T &arg) const
@@ -1422,29 +1395,12 @@ struct MakeRValue<const char (&)[n]> {
     return makeCharArray(arg);
   }
 };
-#endif
-
-
-#if !CHANGE_REFERENCE
-template <typename T>
-static T rvalue(const T &arg)
-{
-  return T(arg);
-}
-
-
-static Array rvalue(const char *p)
-{
-  return makeCharArray(p);
-}
-#endif
 
 
 namespace {
 struct Placeholder {
   Context context;
 
-#if CHANGE_REFERENCE
   template <typename ...Args>
   auto operator()(Args &&...args)
   {
@@ -1454,13 +1410,6 @@ struct Placeholder {
         context
       );
   }
-#else
-  template <typename ...Args>
-  auto operator()(const Args &...args)
-  {
-    return evaluate(combine(context, rvalue(args)...), context);
-  }
-#endif
 
   static constexpr Function<Shape>     shape = {};
   static constexpr Function<Reshape>   reshape = {};
@@ -1553,19 +1502,11 @@ int main()
 
   assert(_(1,0,2, _.replicate, 1,2,3) == _(1,3,3));
 
-#if CHANGE_REFERENCE
   {
     Value R = 5;
     _(R, _.assign, 1, _.drop, _.iota, 5);
-    assert(_(R) == _(2,3,4,5));
+    assert(*_(R).ptr == _(2,3,4,5));
   }
-#else
-  {
-    Value R = 5;
-    _(&R, _.assign, 1, _.drop, _.iota, 5);
-    assert(_(R) == _(2,3,4,5));
-  }
-#endif
 
   assert(_(1, _.member_of, 1) == _(1));
   assert(_(1, _.member_of, 1,2,3) == _(1));
