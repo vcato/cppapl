@@ -263,7 +263,6 @@ static ostream& operator<<(ostream& stream, const Value &v)
 }
 
 
-#if 1
 static ostream& operator<<(ostream& stream, const Array &a)
 {
   if (a.shape.empty()) {
@@ -294,7 +293,6 @@ static ostream& operator<<(ostream& stream, const Array &a)
 
   return stream;
 }
-#endif
 
 
 static bool operator==(const Array &a, const Array &b)
@@ -394,6 +392,13 @@ struct Expr {
 
   ~Expr();
 };
+}
+
+
+template <typename F>
+static ostream& operator<<(ostream& stream, const Expr<F> &a)
+{
+  return stream << evaluateExpr(a);
 }
 
 
@@ -1123,7 +1128,7 @@ static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
   result.values.resize(n);
 
   for (size_t i=0; i!=n; ++i) {
-    Optional<int> maybe_x = maybeInteger(arg.right.values[0]);
+    Optional<int> maybe_x = maybeInteger(arg.right.values[i]);
 
     if (maybe_x!=0 && maybe_x!=1) {
       assert(false);
@@ -1678,6 +1683,27 @@ int main()
     Value R = 1;
     assert(_(_(R, _.plus, R), _.plus, R, _.assign, 2) == _(6));
   }
+
+#if 0
+  {
+    Value R = 5;
+    assert(_(R, _.assign, 1, _.drop, _.iota, R) == _(2,3,4,5));
+  }
+#endif
+#if 0
+  {
+    Value R = 5;
+    assert(_(R, _.assign, 1, _.drop, _.iota, R) == _(2,3,4,5));
+
+    assert(
+      _(
+        _(_.isnot, R, _.member_of, R, _.outer, _.product, _.times, R),
+        _.replicate, R
+      ) == _(2,3,5)
+    );
+
+  }
+#endif
 
 #if 0
   {
