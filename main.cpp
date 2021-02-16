@@ -367,6 +367,37 @@ struct Function {
 
 
 namespace {
+struct Context {
+  std::mt19937 random_engine;
+};
+}
+
+
+namespace {
+template <typename F>
+struct Expr {
+  Context &context;
+  F f;
+  Expr(Context &context, F f)
+  : context(context), f(std::move(f))
+  {
+  }
+
+  bool evaluated = false;
+
+  Expr(Expr &&arg)
+  : context(arg.context),
+    f(std::move(arg.f))
+  {
+    arg.evaluated = true;
+  }
+
+  ~Expr();
+};
+}
+
+
+namespace {
 struct Var {
   Value *const ptr;
 };
@@ -470,13 +501,6 @@ static Array makeArrayFromValues(Values v)
   left.shape = { int(v.size()) };
   left.values = std::move(v);
   return left;
-}
-
-
-namespace {
-struct Context {
-  std::mt19937 random_engine;
-};
 }
 
 
@@ -1126,6 +1150,13 @@ static Atop<Function<T>,Array> join(Function<T> left, Value right, Context &)
 }
 
 
+static Atop<Keyword<Assign>,Array>
+join(Keyword<Assign> left, Value right, Context &)
+{
+  return { left, makeScalarArray(std::move(right)) };
+}
+
+
 template <typename T>
 static auto join(T left, Var right, Context &context)
 {
@@ -1356,6 +1387,77 @@ static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 }
 
 
+template <typename F>
+static Expr<F> combine(Context&, Expr<F> expr)
+{
+  return expr;
+}
+
+
+template <typename T>
+struct MakeRValue {
+  T operator()(T &arg) const
+  {
+    return T(arg);
+  }
+};
+
+
+template <typename F>
+struct MakeRValue<Expr<F>> {
+  Expr<F> operator()(Expr<F> &arg) const
+  {
+    return std::move(arg);
+  }
+};
+
+
+template <typename...Args>
+static auto evaluateInContext(Context &context, Args &&...args)
+{
+  return evaluate(combine(context, MakeRValue<Args>()(args)...), context);
+}
+
+
+template <typename F>
+static auto evaluateExpr(const Expr<F> &expr)
+{
+  auto eval = [&](auto &&...args)
+  {
+    return
+      evaluateInContext(
+        expr.context,
+        std::forward<decltype(args)>(args)...
+      );
+  };
+
+  return expr.f(eval);
+}
+
+
+template <typename F>
+Expr<F>::~Expr()
+{
+  if (!evaluated) {
+    evaluateExpr(*this);
+  }
+}
+
+
+template <typename F>
+static auto evaluate(const Expr<F> &expr, Context &)
+{
+  return evaluateExpr(expr);
+}
+
+
+template <typename T, typename F>
+static auto join(T left, Expr<F> right, Context &context)
+{
+  return join(std::move(left), evaluateExpr(right), context);
+}
+
+
 static Atop<BoundOperator<Plus,Reduce>,Array>
 join(
   Atop<BoundOperator<Plus, Reduce>, Function<Iota> > left,
@@ -1374,15 +1476,6 @@ join(
     )
   };
 }
-
-
-template <typename T>
-struct MakeRValue {
-  T operator()(T &arg) const
-  {
-    return T(arg);
-  }
-};
 
 
 template <typename T>
@@ -1412,6 +1505,14 @@ struct MakeRValue<const char (&)[n]> {
 };
 
 
+template <typename ...Args>
+static auto makeExpr(Context &context, Args &&...args)
+{
+  auto lambda = [&](auto f){ return f(std::forward<decltype(args)>(args)...); };
+  return Expr<decltype(lambda)>{context, lambda};
+}
+
+
 namespace {
 struct Placeholder {
   Context context;
@@ -1419,11 +1520,7 @@ struct Placeholder {
   template <typename ...Args>
   auto operator()(Args &&...args)
   {
-    return
-      evaluate(
-        combine(context, MakeRValue<Args>()(args)...),
-        context
-      );
+    return makeExpr(context, std::forward<decltype(args)>(args)...);
   }
 
   static constexpr Function<Shape>     shape = {};
@@ -1477,6 +1574,40 @@ static std::string str(const T &x)
 }
 
 
+template <typename F>
+static std::string str(const Expr<F> &expr)
+{
+  return str(evaluateExpr(expr));
+}
+
+
+template <typename F>
+static bool operator==(const Value &a, const Expr<F> &b)
+{
+  return a == evaluateExpr(b);
+}
+
+
+template <typename F1, typename F2>
+static bool operator==(const Expr<F1> &a, const Expr<F2> &b)
+{
+  return evaluateExpr(a) == evaluateExpr(b);
+}
+
+
+static vector<int> shapeOf(Array a)
+{
+  return std::move(a.shape);
+}
+
+
+template <typename F>
+static vector<int> shapeOf(const Expr<F> &expr)
+{
+  return shapeOf(evaluateExpr(expr));
+}
+
+
 int main()
 {
   Placeholder _;
@@ -1484,11 +1615,11 @@ int main()
   assert(!(_(2) == _(3)));
   assert(_(1,2) == _(1,2));
   assert(_(1,2,3) == _(1,2,3));
-  assert(_(1,2,3).shape == vector<int>{3});
+  assert(shapeOf(_(1,2,3)) == vector<int>{3});
   assert(_(_.shape, 1,2,3) == _(3));
   assert(_(3, _.equal, 3) == _(1));
   assert(_(3, _.equal, _.shape, 1,2,3) == _(1));
-  assert(_(_.shape,1,2,3).shape == vector<int>{1});
+  assert(shapeOf(_(_.shape,1,2,3)) == vector<int>{1});
   assert(_(1,2,3, _.equal, 1,2,3) == _(1,1,1));
   assert(_(2, _.plus, 2) == _(4));
   assert(_(_.shape, "hello") == _(5));
@@ -1520,13 +1651,12 @@ int main()
   {
     Value R = 5;
     _(R, _.assign, 1, _.drop, _.iota, 5);
-    assert(*_(R).ptr == _(2,3,4,5));
+    assert(R == _(2,3,4,5));
   }
 
   assert(_(1, _.member_of, 1) == _(1));
   assert(_(1, _.member_of, 1,2,3) == _(1));
   assert(_(1,2,3, _.member_of, 2) == _(0,1,0));
-
   assert(_(_.isnot, 1) == _(0));
 
   {
@@ -1539,6 +1669,16 @@ int main()
     assert(_(R, _.plus, R) == _(2));
   }
 
+  {
+    Value R = 1;
+    assert(_(R, _.plus, R, _.assign, 2) == _(4));
+  }
+
+  {
+    Value R = 1;
+    assert(_(_(R, _.plus, R), _.plus, R, _.assign, 2) == _(6));
+  }
+
 #if 0
   {
     Value R = 5;
@@ -1546,7 +1686,7 @@ int main()
     assert(
       _(
         _(_.isnot, R, _.member_of, R, _.outer, _.product, _.times, R),
-        _.replicate, &R, _.assign, 1, _.drop, _.iota, R
+        _.replicate, R, _.assign, 1, _.drop, _.iota, R
       ) == _(2,3,5)
     );
   }
