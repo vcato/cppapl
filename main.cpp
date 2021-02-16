@@ -229,7 +229,6 @@ struct Array {
   Array() = default;
   explicit Array(const Array &) = default;
   Array(Array &&) = default;
-
 };
 }
 
@@ -1143,13 +1142,6 @@ static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
   }
 
   return result;
-}
-
-
-template <typename T>
-static Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
-{
-  return { left, std::move(right) };
 }
 
 
