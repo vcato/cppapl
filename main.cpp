@@ -776,21 +776,21 @@ evaluate(Atop<BoundOperator<A,B>,Function<C>> arg, Context &)
 template <typename T>
 static Function<T> evaluate(Function<T> arg, Context &)
 {
-  return std::move(arg);
+  return arg;
 }
 
 
 template <typename T>
 static Operator<T> evaluate(Operator<T> arg, Context &)
 {
-  return std::move(arg);
+  return arg;
 }
 
 
 template <typename T>
 static Keyword<T> evaluate(Keyword<T> arg, Context &)
 {
-  return std::move(arg);
+  return arg;
 }
 
 
