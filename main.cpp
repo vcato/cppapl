@@ -376,12 +376,17 @@ template <typename F>
 struct Expr {
   Context &context;
   F f;
+
   Expr(Context &context, F f)
   : context(context), f(std::move(f))
   {
   }
 
   bool evaluated = false;
+
+  Expr(const Expr &) = delete;
+  void operator=(const Expr &) = delete;
+  void operator=(Expr &&) = delete;
 
   Expr(Expr &&arg)
   : context(arg.context),
@@ -396,9 +401,9 @@ struct Expr {
 
 
 template <typename F>
-static ostream& operator<<(ostream& stream, const Expr<F> &a)
+static ostream& operator<<(ostream& stream, Expr<F> a)
 {
-  return stream << evaluateExpr(a);
+  return stream << evaluateExpr(std::move(a));
 }
 
 
@@ -1425,7 +1430,7 @@ static auto evaluateInContext(Context &context, Args &&...args)
 
 
 template <typename F>
-static auto evaluateExpr(const Expr<F> &expr)
+static auto evaluateExpr(Expr<F> &&expr)
 {
   auto eval = [&](auto &&...args)
   {
@@ -1436,7 +1441,9 @@ static auto evaluateExpr(const Expr<F> &expr)
       );
   };
 
-  return expr.f(eval);
+  auto result = expr.f(eval);
+  expr.evaluated = true;
+  return result;
 }
 
 
@@ -1444,22 +1451,24 @@ template <typename F>
 Expr<F>::~Expr()
 {
   if (!evaluated) {
-    evaluateExpr(*this);
+    evaluateExpr(std::move(*this));
   }
+
+  assert(evaluated);
 }
 
 
 template <typename F>
-static auto evaluate(const Expr<F> &expr, Context &)
+static auto evaluate(Expr<F> expr, Context &)
 {
-  return evaluateExpr(expr);
+  return evaluateExpr(std::move(expr));
 }
 
 
 template <typename T, typename F>
 static auto join(T left, Expr<F> right, Context &context)
 {
-  return join(std::move(left), evaluateExpr(right), context);
+  return join(std::move(left), evaluateExpr(std::move(right)), context);
 }
 
 
@@ -1580,23 +1589,23 @@ static std::string str(const T &x)
 
 
 template <typename F>
-static std::string str(const Expr<F> &expr)
+static std::string str(Expr<F> expr)
 {
-  return str(evaluateExpr(expr));
+  return str(evaluateExpr(std::move(expr)));
 }
 
 
 template <typename F>
-static bool operator==(const Value &a, const Expr<F> &b)
+static bool operator==(const Value &a, Expr<F> b)
 {
-  return a == evaluateExpr(b);
+  return a == evaluateExpr(std::move(b));
 }
 
 
 template <typename F1, typename F2>
-static bool operator==(const Expr<F1> &a, const Expr<F2> &b)
+static bool operator==(Expr<F1> a, Expr<F2> b)
 {
-  return evaluateExpr(a) == evaluateExpr(b);
+  return evaluateExpr(std::move(a)) == evaluateExpr(std::move(b));
 }
 
 
@@ -1607,9 +1616,9 @@ static vector<int> shapeOf(Array a)
 
 
 template <typename F>
-static vector<int> shapeOf(const Expr<F> &expr)
+static vector<int> shapeOf(Expr<F> expr)
 {
-  return shapeOf(evaluateExpr(expr));
+  return shapeOf(evaluateExpr(std::move(expr)));
 }
 
 
@@ -1684,28 +1693,11 @@ int main()
     assert(_(_(R, _.plus, R), _.plus, R, _.assign, 2) == _(6));
   }
 
-#if 0
   {
     Value R = 5;
     assert(_(R, _.assign, 1, _.drop, _.iota, R) == _(2,3,4,5));
   }
-#endif
-#if 0
-  {
-    Value R = 5;
-    assert(_(R, _.assign, 1, _.drop, _.iota, R) == _(2,3,4,5));
 
-    assert(
-      _(
-        _(_.isnot, R, _.member_of, R, _.outer, _.product, _.times, R),
-        _.replicate, R
-      ) == _(2,3,5)
-    );
-
-  }
-#endif
-
-#if 0
   {
     Value R = 5;
 
@@ -1716,5 +1708,4 @@ int main()
       ) == _(2,3,5)
     );
   }
-#endif
 }
