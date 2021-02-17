@@ -1738,4 +1738,8 @@ int main()
       ) == _(2,3,5)
     );
   }
+
+#if 0
+  assert(_(_.shape, _.shape, _.enclose, 1, 2) == _(0));
+#endif
 }
