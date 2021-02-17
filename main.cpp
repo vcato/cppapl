@@ -6,6 +6,8 @@
 #include <random>
 #include <sstream>
 
+#define ADD_ENCLOSE 0
+
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -42,21 +44,33 @@ using Values = vector<Array>;
 
 
 namespace {
+struct Box {
+  vector<int> shape;
+  vector<Array> values;
+
+  friend bool operator==(const Box &a, const Box &b)
+  {
+    return a.shape == b.shape && a.values == b.values;
+  }
+};
+}
+
+
+namespace {
 class Array {
 private:
   enum class Type {
     number, character, values
   };
 
-  vector<int> _shape;
   Type type;
 
   union {
     Number number;
     char character;
-    vector<Array> values;
+    Box box;
   };
-private:
+
   void createFrom(Array &&arg)
   {
     assert(type == arg.type);
@@ -69,7 +83,7 @@ private:
         new (&character) auto(arg.character);
         break;
       case Type::values:
-        new (&values) auto(std::move(arg.values));
+        new (&box) auto(std::move(arg.box));
         break;
     }
   }
@@ -86,7 +100,7 @@ private:
         new (&character) auto(arg.character);
         break;
       case Type::values:
-        new (&values) auto(arg.values);
+        new (&box) auto(arg.box);
         break;
     }
   }
@@ -101,7 +115,7 @@ private:
         destroyObject(character);
         break;
       case Type::values:
-        destroyObject(values);
+        destroyObject(box);
         break;
     }
   }
@@ -124,32 +138,31 @@ public:
   }
 
   Array(std::vector<int> shape, std::vector<Array> values)
-  : _shape(std::move(shape)),
-    type(Type::values),
-    values(std::move(values))
+  : type(Type::values),
+    box{std::move(shape), std::move(values)}
   {
-    assert(!_shape.empty());
+    assert(!this->shape().empty());
   }
 
   explicit Array(const Array &arg)
-  : _shape(arg._shape),
-    type(arg.type)
+  : type(arg.type)
   {
     createFrom(arg);
-    assert(_shape.empty() != isNonScalar());
   }
 
   Array(Array &&arg)
-  : _shape(std::move(arg._shape)),
-    type(arg.type)
+  : type(arg.type)
   {
     createFrom(std::move(arg));
-    assert(_shape.empty() != isNonScalar());
   }
 
   ~Array() { destroy(); }
 
-  const vector<int> &shape() const { return _shape; }
+  const vector<int> &shape() const
+  {
+    assert(isNonScalar());
+    return box.shape;
+  }
 
   bool isNumber() const { return type == Type::number; }
 
@@ -168,23 +181,26 @@ public:
 
   bool isNonScalar() const { return type == Type::values; }
 
+#if ADD_ENCLOSE
+  bool isSimple() const { return isNumber() || isCharacter(); }
+#endif
+
   Values &asValues()
   {
-    assert(type == Type::values);
-    return values;
+    assert(isNonScalar());
+    return box.values;
   }
 
   const Values &asValues() const
   {
-    assert(type == Type::values);
-    return values;
+    assert(isNonScalar());
+    return box.values;
   }
 
   Array& operator=(Array &&arg)
   {
     destroy();
     type = arg.type;
-    _shape = std::move(arg._shape);
     createFrom(std::move(arg));
     return *this;
   }
@@ -192,9 +208,10 @@ public:
   friend bool operator==(const Array &a, const Array &b)
   {
     if (a.type == Type::values && b.type == Type::number) {
-      if (a._shape.size() == 1 && a._shape[0] == 1) {
-        return a.values[0] == b;
+      if (a.shape().size() == 1 && a.shape()[0] == 1) {
+        return a.asValues()[0] == b;
       }
+
       assert(false);
     }
 
@@ -210,7 +227,7 @@ public:
       case Type::character:
         return a.character == b.character;
       case Type::values:
-        return a.values == b.values;
+        return a.box == b.box;
     }
     assert(false);
   }
@@ -431,6 +448,9 @@ struct Product;
 struct Outer;
 struct Roll;
 struct Replicate;
+#if ADD_ENCLOSE
+struct Enclose;
+#endif
 struct MemberOf;
 struct Not;
 struct Empty;
@@ -446,7 +466,6 @@ static bool isScalar(const Array &a)
     return false;
   }
   else {
-    assert(a.shape().empty());
     return true;
   }
 }
@@ -587,7 +606,7 @@ struct Optional {
 
 static Optional<int> maybeInteger(const Array &a)
 {
-  if (shapeOf(a).empty()) {
+  if (isScalar(a)) {
     if (a.isNumber()) {
       Number n = a.asNumber();
       int int_n = int(n);
@@ -701,6 +720,11 @@ static Array evaluate(Values arg, Context &)
 static Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
 {
   Values values;
+
+  if (isScalar(arg.right)) {
+    return Array({0},{});
+  }
+
   const vector<int> &shape = arg.right.shape();
 
   for (int x : shape) {
@@ -713,9 +737,7 @@ static Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
 
 static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
 {
-  size_t n_dimensions = shapeOf(arg.right).size();
-
-  if (n_dimensions == 0) {
+  if (isScalar(arg.right)) {
     Optional<int> maybe_n = maybeInteger(arg.right);
 
     if (!maybe_n) {
@@ -756,7 +778,7 @@ static Array evaluate(Atop<Function<First>,Array> arg, Context &)
 
 static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
 {
-  if (arg.right.shape().empty()) {
+  if (isScalar(arg.right)) {
     Optional<int> maybe_value = maybeInteger(arg.right);
 
     if (maybe_value) {
@@ -842,7 +864,7 @@ static Array evaluate(Fork<Array,Function<Equal>,Array> arg, Context &)
 static Array
 evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 {
-  if (arg.left.shape().size() == 0) {
+  if (isScalar(arg.left)) {
     if (arg.right.shape().size() == 1) {
       Optional<int> maybe_n_to_drop = maybeInteger(arg.left);
 
@@ -1089,7 +1111,7 @@ static Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
   Array right = std::move(arg.right);
   Values values;
 
-  if (shapeOf(left).empty() && shapeOf(right).empty()) {
+  if (isScalar(left) && isScalar(right)) {
     Optional<int> maybe_n = maybeInteger(left);
 
     if (!maybe_n) {
@@ -1187,6 +1209,18 @@ static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
 
   return Array(arg.right.shape(), std::move(values));
 }
+
+
+#if ADD_ENCLOSE
+static Array evaluate(Atop<Function<Enclose>,Array> arg, Context &)
+{
+  if (arg.right.isSimple()) {
+    return std::move(arg.right);
+  }
+
+  return Array(Box(std::move(arg));
+}
+#endif
 
 
 template <typename T>
@@ -1584,13 +1618,16 @@ struct Placeholder {
   static constexpr Function<Replicate> replicate = {};
   static constexpr Function<MemberOf>  member_of = {};
   static constexpr Function<Not>       isnot = {};
-  static constexpr Keyword<Empty>      empty = {};
-  static constexpr Keyword<Assign>     assign = {};
   static constexpr Function<Drop>      drop = {};
+#if ADD_ENCLOSE
+  static constexpr Function<Enclose>   enclose = {};
+#endif
   static constexpr Operator<Each>      each = {};
   static constexpr Operator<Reduce>    reduce = {};
   static constexpr Operator<Product>   product = {};
   static constexpr Operator<Outer>     outer = {};
+  static constexpr Keyword<Empty>      empty = {};
+  static constexpr Keyword<Assign>     assign = {};
 };
 }
 
@@ -1604,11 +1641,14 @@ constexpr Function<Times>     Placeholder::times;
 constexpr Function<Iota>      Placeholder::iota;
 constexpr Function<Roll>      Placeholder::roll;
 constexpr Function<Replicate> Placeholder::replicate;
-constexpr Keyword<Empty>      Placeholder::empty;
-constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Function<Drop>      Placeholder::drop;
 constexpr Function<MemberOf>  Placeholder::member_of;
 constexpr Function<Not>       Placeholder::isnot;
+#if ADD_ENCLOSE
+constexpr Function<Enclose>   Placeholder::enclose;
+#endif
+constexpr Keyword<Empty>      Placeholder::empty;
+constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Operator<Each>      Placeholder::each;
 constexpr Operator<Reduce>    Placeholder::reduce;
 constexpr Operator<Product>   Placeholder::product;
