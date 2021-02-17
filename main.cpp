@@ -26,11 +26,6 @@ static ostream& operator<<(ostream& s, const vector<T> &v)
 }
 
 
-namespace {
-struct Array;
-}
-
-
 template <typename T>
 static void destroyObject(T &object)
 {
@@ -39,47 +34,29 @@ static void destroyObject(T &object)
 
 
 namespace {
-static bool operator==(const Array &a, const Array &b);
+struct Array;
 }
 
 
-using Value = Array;
-using Values = vector<Value>;
+using Values = vector<Array>;
 
 
 namespace {
-struct Array {
+class Array {
+private:
   enum class Type {
     number, character, values
   };
 
-  vector<int> shape;
+  vector<int> _shape;
   Type type;
 
-private:
   union {
     Number number;
     char character;
     vector<Array> values;
   };
-public:
-
-  friend ostream& operator<<(ostream &stream, Type type)
-  {
-    switch (type) {
-      case Type::number:
-        stream << "number";
-        break;
-      case Type::character:
-        assert(false);
-      case Type::values:
-        stream << "non-scalar";
-        break;
-    }
-
-    return stream;
-  }
-
+private:
   void createFrom(Array &&arg)
   {
     assert(type == arg.type);
@@ -97,7 +74,7 @@ public:
     }
   }
 
-  void createFrom(const Value &arg)
+  void createFrom(const Array &arg)
   {
     assert(type == arg.type);
 
@@ -129,6 +106,8 @@ public:
     }
   }
 
+public:
+
   Array(Number arg)
   : type(Type::number), number(arg)
   {
@@ -145,38 +124,34 @@ public:
   }
 
   Array(std::vector<int> shape, std::vector<Array> values)
-  : shape(std::move(shape)),
+  : _shape(std::move(shape)),
     type(Type::values),
     values(std::move(values))
   {
-    assert(!this->shape.empty());
+    assert(!_shape.empty());
   }
 
   explicit Array(const Array &arg)
-  : shape(arg.shape),
+  : _shape(arg._shape),
     type(arg.type)
   {
     createFrom(arg);
-    assert(this->shape.empty() != isNonScalar());
+    assert(_shape.empty() != isNonScalar());
   }
 
   Array(Array &&arg)
-  : shape(std::move(arg.shape)),
+  : _shape(std::move(arg._shape)),
     type(arg.type)
   {
     createFrom(std::move(arg));
-    assert(this->shape.empty() != isNonScalar());
+    assert(_shape.empty() != isNonScalar());
   }
 
-  ~Array()
-  {
-    destroy();
-  }
+  ~Array() { destroy(); }
 
-  bool isNumber() const
-  {
-    return type == Type::number;
-  }
+  const vector<int> &shape() const { return _shape; }
+
+  bool isNumber() const { return type == Type::number; }
 
   Number asNumber() const
   {
@@ -184,20 +159,14 @@ public:
     return number;
   }
 
-  bool isCharacter() const
-  {
-    return type == Type::character;
-  }
+  bool isCharacter() const { return type == Type::character; }
 
   char asCharacter() const
   {
     assert(false);
   }
 
-  bool isNonScalar() const
-  {
-    return type == Type::values;
-  }
+  bool isNonScalar() const { return type == Type::values; }
 
   Values &asValues()
   {
@@ -211,16 +180,11 @@ public:
     return values;
   }
 
-  void setValues(vector<int> /*shape*/, vector<Array> /*values*/)
-  {
-    assert(false);
-  }
-
   Array& operator=(Array &&arg)
   {
     destroy();
     type = arg.type;
-    shape = std::move(arg.shape);
+    _shape = std::move(arg._shape);
     createFrom(std::move(arg));
     return *this;
   }
@@ -228,7 +192,7 @@ public:
   friend bool operator==(const Array &a, const Array &b)
   {
     if (a.type == Type::values && b.type == Type::number) {
-      if (a.shape.size() == 1 && a.shape[0] == 1) {
+      if (a._shape.size() == 1 && a._shape[0] == 1) {
         return a.values[0] == b;
       }
       assert(false);
@@ -250,17 +214,32 @@ public:
     }
     assert(false);
   }
+
+  friend ostream& operator<<(ostream &stream, Type type)
+  {
+    switch (type) {
+      case Type::number:
+        stream << "number";
+        break;
+      case Type::character:
+        assert(false);
+      case Type::values:
+        stream << "non-scalar";
+        break;
+    }
+
+    return stream;
+  }
 };
 }
 
 
-static ostream& operator<<(ostream& stream, const Value &v);
 static ostream& operator<<(ostream& stream, const Array &a);
 
 
 static void
 printNonScalarArrayOn(
-  ostream &stream, const vector<int> &shape, const vector<Value> &values
+  ostream &stream, const vector<int> &shape, const Values &values
 )
 {
   if (shape.empty()) {
@@ -307,11 +286,11 @@ static Values &valuesOf(Array &array)
 
 static const vector<int> &shapeOf(const Array &a)
 {
-  return a.shape;
+  return a.shape();
 }
 
 
-static ostream& operator<<(ostream& stream, const Value &v)
+static ostream& operator<<(ostream& stream, const Array &v)
 {
   if (v.isNumber()) {
     stream << v.asNumber();
@@ -337,18 +316,6 @@ struct BoundOperator {
 }
 
 
-static Array makeScalarArray(Value arg)
-{
-  return arg;
-}
-
-
-static Array makeNonScalarArray(vector<int> shape, Values values)
-{
-  return Array(std::move(shape), std::move(values));
-}
-
-
 static Array makeCharArray(const char *arg)
 {
   int n = strlen(arg);
@@ -360,7 +327,7 @@ static Array makeCharArray(const char *arg)
   }
 
   assert(values[0].isCharacter());
-  return makeNonScalarArray(std::move(shape), std::move(values));
+  return Array(std::move(shape), std::move(values));
 }
 
 
@@ -423,7 +390,7 @@ static ostream& operator<<(ostream& stream, Expr<F> a)
 
 namespace {
 struct Var {
-  Value *const ptr;
+  Array *const ptr;
 };
 }
 
@@ -475,20 +442,13 @@ struct Drop;
 static bool isScalar(const Array &a)
 {
   if (a.isNonScalar()) {
-    assert(!a.shape.empty());
+    assert(!a.shape().empty());
     return false;
   }
   else {
-    assert(a.shape.empty());
+    assert(a.shape().empty());
     return true;
   }
-}
-
-
-static Value scalarValue(Array a)
-{
-  assert(a.shape.empty());
-  return a;
 }
 
 
@@ -497,20 +457,17 @@ static Array evaluateBinary(Array left, Array right, Function f)
 {
   if (isScalar(left)) {
     if (isScalar(right)) {
-      return
-        makeScalarArray(
-          f(scalarValue(std::move(left)), scalarValue(std::move(right)))
-        );
+      return f(std::move(left), std::move(right));
     }
 
-    assert(!right.shape.empty());
+    assert(!right.shape().empty());
     Values values;
 
     for (auto &x : valuesOf(right)) {
-      values.push_back(f(scalarValue(Array(left)), std::move(x)));
+      values.push_back(f(Array(left), std::move(x)));
     }
 
-    return makeNonScalarArray(right.shape, std::move(values));
+    return Array(right.shape(), std::move(values));
   }
 
   if (valuesOf(left).size() == 1) {
@@ -522,13 +479,13 @@ static Array evaluateBinary(Array left, Array right, Function f)
         f(std::move(valuesOf(left)[0]), std::move(valuesOf(right)[0]))
       );
 
-      return makeNonScalarArray(std::move(shape), std::move(values));
+      return Array(std::move(shape), std::move(values));
     }
     assert(false);
   }
 
   if (shapeOf(left) == shapeOf(right)) {
-    vector<int> shape = left.shape;
+    vector<int> shape = left.shape();
     Values values;
     size_t n = valuesOf(left).size();
     auto in1 = valuesOf(left).begin();
@@ -538,7 +495,7 @@ static Array evaluateBinary(Array left, Array right, Function f)
       values.push_back(f(std::move(*in1++), std::move(*in2++)));
     }
 
-    return makeNonScalarArray(std::move(shape), std::move(values));
+    return Array(std::move(shape), std::move(values));
   }
 
   cerr << "left.values: " << valuesOf(left) << "\n";
@@ -549,16 +506,16 @@ static Array evaluateBinary(Array left, Array right, Function f)
 static Array makeArrayFromValues(Values v)
 {
   if (v.empty()) {
-    return makeNonScalarArray({0}, {});
+    return Array({0}, {});
   }
 
   size_t n = v.size();
 
   if (n == 1) {
-    return makeScalarArray(std::move(v[0]));
+    return std::move(v[0]);
   }
 
-  return makeNonScalarArray({ int(n) }, std::move(v));
+  return Array({ int(n) }, std::move(v));
 }
 
 
@@ -657,12 +614,12 @@ static int product(const vector<int> &arg)
 }
 
 
-static void addNCopiesTo(vector<Value> &result_values, int n, const Value &v)
+static void addNCopiesTo(Values &result_values, int n, const Array &v)
 {
   assert(n >= 0);
 
   for (int i=0; i!=n; ++i) {
-    result_values.push_back(Value(v));
+    result_values.push_back(Array(v));
   }
 }
 
@@ -690,23 +647,21 @@ replicateInto(
 template <typename T, typename G>
 static Array evaluateNumberBinary(Fork<Array,T,Array> arg, const G &g)
 {
-  auto f = [&](const Value& a, const Value& b)
+  auto f = [&](const Array& a, const Array& b)
   {
     if (a.isNumber() && b.isNumber()) {
-      return Value(g(a.asNumber(), b.asNumber()));
+      return g(a.asNumber(), b.asNumber());
     }
     else {
       assert(false);
     }
-
-    //return Value();
   };
 
   return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
 }
 
 
-static Value evaluate(int arg, Context &)
+static Array evaluate(int arg, Context &)
 {
   return Number(arg);
 }
@@ -719,21 +674,21 @@ static Var evaluate(Var arg, Context &)
 }
 
 
-static inline Value evaluate(Number arg, Context &)
+static inline Array evaluate(Number arg, Context &)
 {
   return arg;
 }
 
 
-static inline Value evaluate(char arg, Context &)
+static inline Array evaluate(char arg, Context &)
 {
   return arg;
 }
 
 
-static Array evaluate(Value value, Context &)
+static Array evaluate(Array value, Context &)
 {
-  return makeScalarArray(std::move(value));
+  return value;
 }
 
 
@@ -746,13 +701,13 @@ static Array evaluate(Values arg, Context &)
 static Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
 {
   Values values;
-  const vector<int> &shape = arg.right.shape;
+  const vector<int> &shape = arg.right.shape();
 
   for (int x : shape) {
     values.push_back(Number(x));
   }
 
-  return makeNonScalarArray({ int(shape.size()) }, std::move(values));
+  return Array({ int(shape.size()) }, std::move(values));
 }
 
 
@@ -777,7 +732,7 @@ static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
       values.push_back(Number(i));
     }
 
-    return makeNonScalarArray(std::move(shape), std::move(values));
+    return Array(std::move(shape), std::move(values));
   }
 
   cerr << "arg.right: " << arg.right << "\n";
@@ -787,12 +742,12 @@ static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
 
 static Array evaluate(Atop<Function<First>,Array> arg, Context &)
 {
-  if (arg.right.shape.size() == 0) {
+  if (arg.right.shape().size() == 0) {
     assert(false);
   }
 
-  if (arg.right.shape.size() == 1) {
-    return makeScalarArray(std::move(valuesOf(arg.right)[0]));
+  if (arg.right.shape().size() == 1) {
+    return std::move(valuesOf(arg.right)[0]);
   }
 
   assert(false);
@@ -801,14 +756,14 @@ static Array evaluate(Atop<Function<First>,Array> arg, Context &)
 
 static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
 {
-  if (arg.right.shape.empty()) {
+  if (arg.right.shape().empty()) {
     Optional<int> maybe_value = maybeInteger(arg.right);
 
     if (maybe_value) {
       int value = *maybe_value;
 
       if (value > 0) {
-        return makeScalarArray(Number(roll(value, context)));
+        return Number(roll(value, context));
       }
 
       assert(false);
@@ -817,8 +772,8 @@ static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
     assert(false);
   }
 
-  if (arg.right.shape.size() == 1) {
-    vector<Value> result;
+  if (arg.right.shape().size() == 1) {
+    Values result;
 
     for (auto &x : valuesOf(arg.right)) {
       if (!x.isNumber()) {
@@ -887,8 +842,8 @@ static Array evaluate(Fork<Array,Function<Equal>,Array> arg, Context &)
 static Array
 evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 {
-  if (arg.left.shape.size() == 0) {
-    if (arg.right.shape.size() == 1) {
+  if (arg.left.shape().size() == 0) {
+    if (arg.right.shape().size() == 1) {
       Optional<int> maybe_n_to_drop = maybeInteger(arg.left);
 
       if (!maybe_n_to_drop) {
@@ -898,7 +853,7 @@ evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
       int n_to_drop = *maybe_n_to_drop;
 
       if (shapeOf(arg.right)[0] <= n_to_drop) {
-        return makeNonScalarArray({0}, {});
+        return Array({0}, {});
       }
 
       vector<int> shape = {shapeOf(arg.right)[0] - n_to_drop};
@@ -910,7 +865,7 @@ evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
         values.push_back(std::move(*iter));
       }
 
-      return makeNonScalarArray(std::move(shape), std::move(values));
+      return Array(std::move(shape), std::move(values));
     }
   }
 
@@ -926,7 +881,7 @@ static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
 
   vector<int> shape;
 
-  for (Value &x : valuesOf(arg.left)) {
+  for (Array &x : valuesOf(arg.left)) {
     Optional<int> maybe_int_x = maybeInteger(x);
 
     if (!maybe_int_x) {
@@ -943,7 +898,7 @@ static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
     values.push_back(valuesOf(arg.right)[i % valuesOf(arg.right).size()]);
   }
 
-  return makeNonScalarArray(std::move(shape), std::move(values));
+  return Array(std::move(shape), std::move(values));
 }
 
 
@@ -957,19 +912,19 @@ evaluate(
   Context&
 )
 {
-  if (arg.left.shape.size() != 1) {
+  if (arg.left.shape().size() != 1) {
     cerr << "arg.left: " << arg.left << "\n";
-    cerr << "arg.left.shape.size(): " << arg.left.shape.size() << "\n";
+    cerr << "arg.left.shape.size(): " << arg.left.shape().size() << "\n";
     assert(false);
   }
 
-  int n_rows = arg.left.shape[0];
+  int n_rows = arg.left.shape()[0];
 
-  if (arg.right.shape.size() != 1) {
+  if (arg.right.shape().size() != 1) {
     assert(false);
   }
 
-  int n_cols = arg.right.shape[0];
+  int n_cols = arg.right.shape()[0];
 
   vector<int> shape = { n_rows, n_cols };
   Values values;
@@ -994,17 +949,19 @@ evaluate(
     }
   }
 
-  return makeNonScalarArray(std::move(shape), std::move(values));
+  return Array(std::move(shape), std::move(values));
 }
 
 
-static bool isElementOf(const Value &a, const Array &b)
+static bool isElementOf(const Array &a, const Array &b)
 {
+  assert(isScalar(a));
+
   if (isScalar(b)) {
-    return (a == scalarValue(Array(b)));
+    return (a == Array(b));
   }
 
-  for (const Value &x : valuesOf(b)) {
+  for (const Array &x : valuesOf(b)) {
     if (a == x) {
       return true;
     }
@@ -1017,8 +974,8 @@ static bool isElementOf(const Value &a, const Array &b)
 static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
 {
   if (isScalar(arg.left)) {
-    Value left_value = scalarValue(std::move(arg.left));
-    return makeScalarArray(isElementOf(left_value, arg.right));
+    Array left_value = std::move(arg.left);
+    return isElementOf(left_value, arg.right);
   }
 
   size_t n = valuesOf(arg.left).size();
@@ -1028,7 +985,7 @@ static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
     values.push_back(isElementOf(valuesOf(arg.left)[i], arg.right));
   }
 
-  return makeNonScalarArray(arg.left.shape, std::move(values));
+  return Array(arg.left.shape(), std::move(values));
 }
 
 
@@ -1066,7 +1023,7 @@ static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg, Context &)
 {
   const Array &right = arg.right;
 
-  if (right.shape.size() == 1) {
+  if (right.shape().size() == 1) {
     Number total = 0;
 
     for (auto &x : valuesOf(right)) {
@@ -1077,7 +1034,7 @@ static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg, Context &)
       total += x.asNumber();
     }
 
-    return makeScalarArray(total);
+    return total;
   }
 
   assert(false);
@@ -1086,10 +1043,10 @@ static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg, Context &)
 
 static Array evaluate(Atop<BoundOperator<First,Each>,Array> arg, Context &)
 {
-  if (arg.right.shape.empty()) {
+  if (arg.right.shape().empty()) {
     assert(false);
   }
-  else if (arg.right.shape.size() == 1) {
+  else if (arg.right.shape().size() == 1) {
     Values result;
 
     for (auto &x : valuesOf(arg.right)) {
@@ -1152,7 +1109,7 @@ static Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
       values.push_back(Array(right));
     }
 
-    return makeNonScalarArray(std::move(shape), std::move(values));
+    return Array(std::move(shape), std::move(values));
   }
   else if (shapeOf(left).size() == 1 && shapeOf(right).size() == 1) {
     if (shapeOf(left)[0] != shapeOf(right)[0]) {
@@ -1167,7 +1124,7 @@ static Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
   }
 
   size_t n = values.size();
-  return makeNonScalarArray({ int(n) }, std::move(values));
+  return Array({ int(n) }, std::move(values));
 }
 
 
@@ -1184,7 +1141,7 @@ evaluate(
   Array left = makeArrayFromValues(std::move(arg.left));
   Array right = std::move(arg.right);
 
-  if (left.shape.size() == 1 && right.shape.size() == 1) {
+  if (left.shape().size() == 1 && right.shape().size() == 1) {
     if (valuesOf(left).size() == valuesOf(right).size()) {
       Number result = 0;
       size_t n = valuesOf(left).size();
@@ -1195,7 +1152,7 @@ evaluate(
         result += valuesOf(left)[i].asNumber()*valuesOf(right)[i].asNumber();
       }
 
-      return makeScalarArray(result);
+      return result;
     }
     assert(false);
   }
@@ -1203,7 +1160,7 @@ evaluate(
 }
 
 
-static bool isNot(const Value &a)
+static bool isNot(const Array &a)
 {
   Optional<int> maybe_x = maybeInteger(a);
 
@@ -1218,7 +1175,7 @@ static bool isNot(const Value &a)
 static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
 {
   if (isScalar(arg.right)) {
-    return makeScalarArray(isNot(scalarValue(std::move(arg.right))));
+    return isNot(arg.right);
   }
 
   size_t n = valuesOf(arg.right).size();
@@ -1228,21 +1185,21 @@ static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
     values.push_back(isNot(valuesOf(arg.right)[i]));
   }
 
-  return makeNonScalarArray(arg.right.shape, std::move(values));
+  return Array(arg.right.shape(), std::move(values));
 }
 
 
 template <typename T>
-static Atop<Function<T>,Array> join(Function<T> left, Value right, Context &)
+static Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
 {
-  return { left, makeScalarArray(std::move(right)) };
+  return { left, std::move(right) };
 }
 
 
 static Atop<Keyword<Assign>,Array>
-join(Keyword<Assign> left, Value right, Context &)
+join(Keyword<Assign> left, Array right, Context &)
 {
-  return { left, makeScalarArray(std::move(right)) };
+  return { left, std::move(right) };
 }
 
 
@@ -1250,7 +1207,7 @@ template <typename T>
 static auto join(T left, Var right, Context &context)
 {
   assert(right.ptr);
-  return join(left, Value(*right.ptr), context);
+  return join(left, Array(*right.ptr), context);
 }
 
 
@@ -1262,11 +1219,11 @@ join(Function<T> left, Values right, Context &context)
 }
 
 
-static Value join(Var left, Atop<Keyword<Assign>, Array> right, Context&)
+static Array join(Var left, Atop<Keyword<Assign>, Array> right, Context&)
 {
   assert(left.ptr);
   *left.ptr = std::move(right.right);
-  return Value(*left.ptr);
+  return Array(*left.ptr);
 }
 
 
@@ -1282,7 +1239,7 @@ join(
 
 
 template <typename T>
-static Fork<Values,T,Array> join(Value left, Atop<T,Array> right, Context &)
+static Fork<Values,T,Array> join(Array left, Atop<T,Array> right, Context &)
 {
   Values new_left;
   new_left.push_back(std::move(left));
@@ -1292,7 +1249,7 @@ static Fork<Values,T,Array> join(Value left, Atop<T,Array> right, Context &)
 
 template <typename T>
 static Fork<Values,T,Array>
-join(Value left, Fork<Values,T,Array> right, Context &)
+join(Array left, Fork<Values,T,Array> right, Context &)
 {
   Fork<Values,T,Array> result = std::move(right);
   result.left.insert(result.left.begin(), std::move(left));
@@ -1403,7 +1360,7 @@ join(
 }
 
 
-static Values join(Value left, Value right, Context &)
+static Values join(Array left, Array right, Context &)
 {
   Values result;
   result.push_back(std::move(left));
@@ -1412,7 +1369,7 @@ static Values join(Value left, Value right, Context &)
 }
 
 
-static Values join(Value left, Values right, Context &)
+static Values join(Array left, Values right, Context &)
 {
   Values result;
   result.push_back(std::move(left));
@@ -1428,13 +1385,13 @@ static Values join(Value left, Values right, Context &)
 template <typename T>
 static auto join(Var left, T right, Context &context)
 {
-  return join(Value(*left.ptr), std::move(right), context);
+  return join(Array(*left.ptr), std::move(right), context);
 }
 
 
-static Value combine(Context &, int arg)
+static Array combine(Context &, int arg)
 {
-  return Value(arg);
+  return Array(arg);
 }
 
 
@@ -1554,7 +1511,7 @@ static auto join(T left, Expr<F> right, Context &context)
 static Atop<BoundOperator<Plus,Reduce>,Array>
 join(
   Atop<BoundOperator<Plus, Reduce>, Function<Iota> > left,
-  Value right,
+  Array right,
   Context &context
 )
 {
@@ -1563,7 +1520,7 @@ join(
     evaluate(
       Atop<Function<Iota>,Array>
       {
-        left.right, makeScalarArray(std::move(right))
+        left.right, std::move(right)
       }
       , context
     )
@@ -1675,7 +1632,7 @@ static std::string str(Expr<F> expr)
 
 
 template <typename F>
-static bool operator==(const Value &a, Expr<F> b)
+static bool operator==(const Array &a, Expr<F> b)
 {
   return a == evaluateExpr(std::move(b));
 }
@@ -1736,7 +1693,7 @@ int main()
   assert(_(1,0,2, _.replicate, 1,2,3) == _(1,3,3));
 
   {
-    Value R = 5;
+    Array R = 5;
     _(R, _.assign, 1, _.drop, _.iota, 5);
     assert(R == _(2,3,4,5));
   }
@@ -1747,32 +1704,32 @@ int main()
   assert(_(_.isnot, 1) == _(0));
 
   {
-    Value R = 3;
+    Array R = 3;
     assert(_(_.iota, R) == _(1,2,3));
   }
 
   {
-    Value R = 1;
+    Array R = 1;
     assert(_(R, _.plus, R) == _(2));
   }
 
   {
-    Value R = 1;
+    Array R = 1;
     assert(_(R, _.plus, R, _.assign, 2) == _(4));
   }
 
   {
-    Value R = 1;
+    Array R = 1;
     assert(_(_(R, _.plus, R), _.plus, R, _.assign, 2) == _(6));
   }
 
   {
-    Value R = 5;
+    Array R = 5;
     assert(_(R, _.assign, 1, _.drop, _.iota, R) == _(2,3,4,5));
   }
 
   {
-    Value R = 5;
+    Array R = 5;
 
     assert(
       _(
