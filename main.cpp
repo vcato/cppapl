@@ -6,8 +6,6 @@
 #include <random>
 #include <sstream>
 
-#define CHANGE_ARRAY 0
-
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -45,210 +43,27 @@ static bool operator==(const Array &a, const Array &b);
 }
 
 
-#if !CHANGE_ARRAY
-namespace {
-struct Value {
-  enum class Type {
-    number, character, array_ptr
-  };
-
-  friend ostream& operator<<(ostream &stream, Type type)
-  {
-    switch (type) {
-      case Type::number:
-        stream << "number";
-        break;
-      case Type::character:
-        assert(false);
-      case Type::array_ptr:
-        stream << "array_ptr";
-        break;
-    }
-
-    return stream;
-  }
-
-  Type type;
-
-  union {
-    Number number;
-    char character;
-    std::unique_ptr<Array> array_ptr;
-  };
-
-  Value()
-  : type(Type::array_ptr), array_ptr(nullptr)
-  {
-  }
-
-  Value(Number arg)
-  : type(Type::number), number(arg)
-  {
-  }
-
-  Value(int arg)
-  : type(Type::number), number(arg)
-  {
-  }
-
-  Value(char arg)
-  : type(Type::character), character(arg)
-  {
-  }
-
-  Value(Array arg);
-
-  Value(Value &&arg)
-  : type(arg.type)
-  {
-    createFrom(std::move(arg));
-  }
-
-  explicit Value(const Value &arg)
-  : type(arg.type)
-  {
-    createFrom(arg);
-  }
-
-  bool isNonScalar() const { return type == Type::array_ptr; }
-  bool isNumber() const { return type == Type::number; }
-  bool isCharacter() const { return type == Type::character; }
-
-  Number asNumber() const
-  {
-    assert(type == Type::number);
-    return number;
-  }
-
-  char asCharacter() const
-  {
-    assert(type == Type::character);
-    return character;
-  }
-
-  const Array &asArray() const
-  {
-    assert(type == Type::array_ptr);
-    assert(array_ptr);
-    return *array_ptr;
-  }
-
-  Array &asArray()
-  {
-    assert(type == Type::array_ptr);
-    assert(array_ptr);
-    return *array_ptr;
-  }
-
-  friend bool operator==(const Value &a, const Value &b)
-  {
-    if (a.type != b.type) {
-      cerr << "a.type: " << a.type << "\n";
-      cerr << "b.type: " << b.type << "\n";
-      assert(false);
-    }
-
-    switch (a.type) {
-      case Type::number:
-        return a.number == b.number;
-      case Type::character:
-        return a.character == b.character;
-      case Type::array_ptr:
-        return *a.array_ptr == *b.array_ptr;
-    }
-    assert(false);
-  }
-
-  void destroy()
-  {
-    switch (type) {
-      case Type::number:
-        destroyObject(number);
-        break;
-      case Type::character:
-        destroyObject(character);
-        break;
-      case Type::array_ptr:
-        destroyObject(array_ptr);
-        break;
-    }
-  }
-
-  void createFrom(Value &&arg)
-  {
-    assert(type == arg.type);
-
-    switch (type) {
-      case Type::number:
-        new (&number) auto(arg.number);
-        break;
-      case Type::character:
-        new (&character) auto(arg.character);
-        break;
-      case Type::array_ptr:
-        assert(arg.array_ptr);
-        new (&array_ptr) auto(std::move(arg.array_ptr));
-        break;
-    }
-  }
-
-  void createFrom(const Value &arg)
-  {
-    assert(type == arg.type);
-
-    switch (type) {
-      case Type::number:
-        new (&number) auto(arg.number);
-        break;
-      case Type::character:
-        new (&character) auto(arg.character);
-        break;
-      case Type::array_ptr:
-        assert(arg.array_ptr);
-        new (&array_ptr) auto(std::make_unique<Array>(*arg.array_ptr));
-        break;
-    }
-  }
-
-  Value& operator=(Value arg)
-  {
-    destroy();
-    type = arg.type;
-    createFrom(std::move(arg));
-    return *this;
-  }
-
-  ~Value() { destroy(); }
-};
-}
-#endif
-
-
-#if CHANGE_ARRAY
 using Value = Array;
-#endif
-
 using Values = vector<Value>;
 
 
 namespace {
 struct Array {
-  vector<int> shape;
-#if CHANGE_ARRAY
   enum class Type {
     number, character, values
   };
 
+  vector<int> shape;
   Type type;
 
+private:
   union {
     Number number;
     char character;
     vector<Array> values;
   };
-#endif
+public:
 
-#if CHANGE_ARRAY
   friend ostream& operator<<(ostream &stream, Type type)
   {
     switch (type) {
@@ -319,23 +134,38 @@ struct Array {
   {
   }
 
+  Array(int arg)
+  : type(Type::number), number(arg)
+  {
+  }
+
+  Array(char arg)
+  : type(Type::character), character(arg)
+  {
+  }
+
   Array(std::vector<int> shape, std::vector<Array> values)
   : shape(std::move(shape)),
     type(Type::values),
     values(std::move(values))
   {
+    assert(!this->shape.empty());
   }
 
   explicit Array(const Array &arg)
-  : type(arg.type)
+  : shape(arg.shape),
+    type(arg.type)
   {
     createFrom(arg);
+    assert(this->shape.empty() != isNonScalar());
   }
 
   Array(Array &&arg)
-  : type(arg.type)
+  : shape(std::move(arg.shape)),
+    type(arg.type)
   {
     createFrom(std::move(arg));
+    assert(this->shape.empty() != isNonScalar());
   }
 
   ~Array()
@@ -345,17 +175,18 @@ struct Array {
 
   bool isNumber() const
   {
-    assert(false);
+    return type == Type::number;
   }
 
   Number asNumber() const
   {
-    assert(false);
+    assert(type == Type::number);
+    return number;
   }
 
   bool isCharacter() const
   {
-    assert(false);
+    return type == Type::character;
   }
 
   char asCharacter() const
@@ -370,12 +201,14 @@ struct Array {
 
   Values &asValues()
   {
-    assert(false);
+    assert(type == Type::values);
+    return values;
   }
 
   const Values &asValues() const
   {
-    assert(false);
+    assert(type == Type::values);
+    return values;
   }
 
   void setValues(vector<int> /*shape*/, vector<Array> /*values*/)
@@ -383,9 +216,13 @@ struct Array {
     assert(false);
   }
 
-  Array& operator=(const Array &)
+  Array& operator=(Array &&arg)
   {
-    assert(false);
+    destroy();
+    type = arg.type;
+    shape = std::move(arg.shape);
+    createFrom(std::move(arg));
+    return *this;
   }
 
   friend bool operator==(const Array &a, const Array &b)
@@ -413,25 +250,8 @@ struct Array {
     }
     assert(false);
   }
-#else
-  Values values;
-#endif
-
-#if !CHANGE_ARRAY
-  Array() = default;
-  explicit Array(const Array &) = default;
-  Array(Array &&) = default;
-#endif
 };
 }
-
-
-#if !CHANGE_ARRAY
-Value::Value(Array arg)
-: type(Type::array_ptr), array_ptr(std::make_unique<Array>(std::move(arg)))
-{
-}
-#endif
 
 
 static ostream& operator<<(ostream& stream, const Value &v);
@@ -471,34 +291,17 @@ printNonScalarArrayOn(
 }
 
 
-#if !CHANGE_ARRAY
-static const Values &valuesOf(const Value &v)
-{
-  assert(v.isNonScalar());
-  return v.asArray().values;
-}
-#endif
-
-
 static const Values &valuesOf(const Array &array)
 {
-#if CHANGE_ARRAY
   assert(array.isNonScalar());
   return array.asValues();
-#else
-  return array.values;
-#endif
 }
 
 
 static Values &valuesOf(Array &array)
 {
-#if CHANGE_ARRAY
   assert(array.isNonScalar());
   return array.asValues();
-#else
-  return array.values;
-#endif
 }
 
 
@@ -506,15 +309,6 @@ static const vector<int> &shapeOf(const Array &a)
 {
   return a.shape;
 }
-
-
-#if !CHANGE_ARRAY
-static const vector<int> &shapeOf(const Value &v)
-{
-  assert(v.isNonScalar());
-  return v.asArray().shape;
-}
-#endif
 
 
 static ostream& operator<<(ostream& stream, const Value &v)
@@ -536,35 +330,6 @@ static ostream& operator<<(ostream& stream, const Value &v)
 }
 
 
-#if !CHANGE_ARRAY
-static ostream& operator<<(ostream& stream, const Array &a)
-{
-  printNonScalarArrayOn(stream, a.shape, a.values);
-  return stream;
-}
-#endif
-
-
-#if !CHANGE_ARRAY
-namespace {
-static bool operator==(const Array &a, const Array &b)
-{
-  if (a.shape != b.shape) {
-    if (valuesOf(a).size() == 1 && valuesOf(b).size() == 1) {
-      return valuesOf(a)[0] == valuesOf(b)[0];
-    }
-
-    cerr << "a: " << a << "\n";
-    cerr << "b: " << b << "\n";
-    assert(false);
-  }
-
-  return (valuesOf(a) == valuesOf(b));
-}
-}
-#endif
-
-
 namespace {
 template <typename Function, typename Operator>
 struct BoundOperator {
@@ -572,35 +337,15 @@ struct BoundOperator {
 }
 
 
-#if CHANGE_ARRAY
 static Array makeScalarArray(Value arg)
 {
   return arg;
 }
-#else
-static Array makeScalarArray(Value value)
-{
-  if (value.isNonScalar()) {
-    return std::move(value.asArray());
-  }
-
-  Array result;
-  result.values.push_back(std::move(value));
-  return result;
-}
-#endif
 
 
 static Array makeNonScalarArray(vector<int> shape, Values values)
 {
-#if CHANGE_ARRAY
   return Array(std::move(shape), std::move(values));
-#else
-  Array result;
-  result.shape = std::move(shape);
-  result.values = std::move(values);
-  return result;
-#endif
 }
 
 
@@ -729,14 +474,21 @@ struct Drop;
 
 static bool isScalar(const Array &a)
 {
-  return a.shape.empty();
+  if (a.isNonScalar()) {
+    assert(!a.shape.empty());
+    return false;
+  }
+  else {
+    assert(a.shape.empty());
+    return true;
+  }
 }
 
 
-static Value scalarValue(const Array &a)
+static Value scalarValue(Array a)
 {
   assert(a.shape.empty());
-  return Value(a.values[0]);
+  return a;
 }
 
 
@@ -745,13 +497,17 @@ static Array evaluateBinary(Array left, Array right, Function f)
 {
   if (isScalar(left)) {
     if (isScalar(right)) {
-      return makeScalarArray(f(scalarValue(left), scalarValue(right)));
+      return
+        makeScalarArray(
+          f(scalarValue(std::move(left)), scalarValue(std::move(right)))
+        );
     }
 
+    assert(!right.shape.empty());
     Values values;
 
     for (auto &x : valuesOf(right)) {
-      values.push_back(f(scalarValue(left), std::move(x)));
+      values.push_back(f(scalarValue(Array(left)), std::move(x)));
     }
 
     return makeNonScalarArray(right.shape, std::move(values));
@@ -840,6 +596,11 @@ struct Optional {
     return !has_value;
   }
 
+  explicit operator bool() const
+  {
+    return has_value;
+  }
+
   T &operator*()
   {
     assert(has_value);
@@ -867,38 +628,22 @@ struct Optional {
 }
 
 
-#if !CHANGE_ARRAY
-static Optional<int> maybeInteger(const Value &v)
-{
-  if (!v.isNumber()) {
-    assert(false);
-  }
-
-  Number n = v.asNumber();
-  int int_n = int(n);
-
-  if (int_n != n) {
-    assert(false);
-  }
-
-  return int_n;
-}
-#endif
-
-
 static Optional<int> maybeInteger(const Array &a)
 {
   if (shapeOf(a).empty()) {
-#if CHANGE_ARRAY
     if (a.isNumber()) {
-      assert(false);
+      Number n = a.asNumber();
+      int int_n = int(n);
+
+      if (int_n != n) {
+        assert(false);
+      }
+
+      return int_n;
     }
     else {
       assert(false);
     }
-#else
-    return maybeInteger(a.values[0]);
-#endif
   }
   else {
     return {};
@@ -1057,18 +802,18 @@ static Array evaluate(Atop<Function<First>,Array> arg, Context &)
 static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
 {
   if (arg.right.shape.empty()) {
-    if (valuesOf(arg.right)[0].isNumber()) {
-      int value = int(valuesOf(arg.right)[0].asNumber());
+    Optional<int> maybe_value = maybeInteger(arg.right);
 
-      if (value != valuesOf(arg.right)[0].asNumber()) {
-        assert(false);
-      }
+    if (maybe_value) {
+      int value = *maybe_value;
 
       if (value > 0) {
         return makeScalarArray(Number(roll(value, context)));
       }
+
       assert(false);
     }
+
     assert(false);
   }
 
@@ -1144,7 +889,7 @@ evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 {
   if (arg.left.shape.size() == 0) {
     if (arg.right.shape.size() == 1) {
-      Optional<int> maybe_n_to_drop = maybeInteger(valuesOf(arg.left)[0]);
+      Optional<int> maybe_n_to_drop = maybeInteger(arg.left);
 
       if (!maybe_n_to_drop) {
         assert(false);
@@ -1253,9 +998,13 @@ evaluate(
 }
 
 
-static bool isElementOf(const Value &a, const Values &b)
+static bool isElementOf(const Value &a, const Array &b)
 {
-  for (const Value &x : b) {
+  if (isScalar(b)) {
+    return (a == scalarValue(Array(b)));
+  }
+
+  for (const Value &x : valuesOf(b)) {
     if (a == x) {
       return true;
     }
@@ -1267,11 +1016,16 @@ static bool isElementOf(const Value &a, const Values &b)
 
 static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
 {
+  if (isScalar(arg.left)) {
+    Value left_value = scalarValue(std::move(arg.left));
+    return makeScalarArray(isElementOf(left_value, arg.right));
+  }
+
   size_t n = valuesOf(arg.left).size();
   Values values;
 
   for (size_t i=0; i!=n; ++i) {
-    values.push_back(isElementOf(valuesOf(arg.left)[i], valuesOf(arg.right)));
+    values.push_back(isElementOf(valuesOf(arg.left)[i], arg.right));
   }
 
   return makeNonScalarArray(arg.left.shape, std::move(values));
@@ -1306,14 +1060,6 @@ static Array evaluate(Fork<Array,Function<Times>,Array> arg, Context &)
       [](Number a, Number b) { return a * b; }
     );
 }
-
-
-#if !CHANGE_ARRAY
-static Array evaluate(Array array, Context &)
-{
-  return array;
-}
-#endif
 
 
 static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg, Context &)
@@ -1387,12 +1133,26 @@ static Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
   Values values;
 
   if (shapeOf(left).empty() && shapeOf(right).empty()) {
-    if (!valuesOf(left)[0].isNumber()) {
+    Optional<int> maybe_n = maybeInteger(left);
+
+    if (!maybe_n) {
       assert(false);
     }
 
-    int n = 1;
-    replicateInto(values, valuesOf(left), valuesOf(right), n);
+    int n = *maybe_n;
+
+    if (n < 0) {
+      assert(false);
+    }
+
+    vector<int> shape = {n};
+    Values values;
+
+    for (int i=0; i!=n; ++i) {
+      values.push_back(Array(right));
+    }
+
+    return makeNonScalarArray(std::move(shape), std::move(values));
   }
   else if (shapeOf(left).size() == 1 && shapeOf(right).size() == 1) {
     if (shapeOf(left)[0] != shapeOf(right)[0]) {
@@ -1443,19 +1203,29 @@ evaluate(
 }
 
 
+static bool isNot(const Value &a)
+{
+  Optional<int> maybe_x = maybeInteger(a);
+
+  if (maybe_x != 0 && maybe_x != 1) {
+    assert(false);
+  }
+
+  return !*maybe_x;
+}
+
+
 static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
 {
+  if (isScalar(arg.right)) {
+    return makeScalarArray(isNot(scalarValue(std::move(arg.right))));
+  }
+
   size_t n = valuesOf(arg.right).size();
   Values values;
 
   for (size_t i=0; i!=n; ++i) {
-    Optional<int> maybe_x = maybeInteger(valuesOf(arg.right)[i]);
-
-    if (maybe_x!=0 && maybe_x!=1) {
-      assert(false);
-    }
-
-    values.push_back(!*maybe_x);
+    values.push_back(isNot(valuesOf(arg.right)[i]));
   }
 
   return makeNonScalarArray(arg.right.shape, std::move(values));
