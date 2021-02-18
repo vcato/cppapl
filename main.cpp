@@ -9,7 +9,7 @@
 using std::vector;
 using std::cerr;
 using std::ostream;
-using Number = float;
+using Number = double;
 
 
 template <typename T>
@@ -421,14 +421,9 @@ struct Expr {
   }
 
   ~Expr();
+
+  operator Array() &&;
 };
-}
-
-
-template <typename F>
-static ostream& operator<<(ostream& stream, Expr<F> a)
-{
-  return stream << evaluateExpr(std::move(a));
 }
 
 
@@ -453,6 +448,13 @@ struct Atop {
 };
 
 
+template <typename Left, typename Right>
+struct Partial {
+  Left left;
+  Right right;
+};
+
+
 template <typename Left, typename Mid, typename Right>
 struct Fork {
   Left left;
@@ -469,6 +471,7 @@ struct Each;
 struct Equal;
 struct Plus;
 struct Times;
+struct Divide;
 struct Iota;
 struct Reduce;
 struct Product;
@@ -925,7 +928,19 @@ evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 
 static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
 {
-  if (shapeOf(arg.left).size() != 1) {
+  if (Optional<int> maybe_n = maybeInteger(arg.left)) {
+    int n = *maybe_n;
+
+    if (isScalar(arg.right)) {
+      Values values;
+
+      for (int i=0; i!=n; ++i) {
+        values.push_back(arg.right);
+      }
+
+      vector<int> shape = {n};
+      return Array(std::move(shape), std::move(values));
+    }
     assert(false);
   }
 
@@ -1018,6 +1033,40 @@ static bool isElementOf(const Array &a, const Array &b)
   }
 
   return false;
+}
+
+
+static Array
+evaluate(Fork<Array, Function<Divide>, Array> arg, Context&)
+{
+  if (isScalar(arg.left)) {
+    if (!arg.left.isNumber()) {
+      assert(false);
+    }
+
+    if (isScalar(arg.right)) {
+      assert(false);
+    }
+
+    if (arg.right.shape().size() == 1) {
+      vector<int> shape = arg.right.shape();
+      Values values;
+
+      for (auto &x : arg.right.asValues()) {
+        if (!x.isNumber()) {
+          assert(false);
+        }
+
+        values.push_back(arg.left.asNumber() / x.asNumber());
+      }
+
+      return Array(std::move(shape), std::move(values));
+    }
+
+    cerr << "arg.right.shape(): " << arg.right.shape() << "\n";
+    assert(false);
+  }
+  assert(false);
 }
 
 
@@ -1264,6 +1313,14 @@ join(Keyword<Assign> left, Array right, Context &)
 
 
 template <typename T>
+static Partial<Operator<T>,Array>
+join(Operator<T> left, Array right, Context &)
+{
+  return { std::move(left), std::move(right) };
+}
+
+
+template <typename T>
 static auto join(T left, Var right, Context &context)
 {
   assert(right.ptr);
@@ -1326,14 +1383,14 @@ join(Function<T1> left, Atop<Function<T2>,Array> right, Context &context)
 
 
 template <typename T>
-static Atop<Operator<T>,Array>
+static Partial<Operator<T>,Array>
 join(Operator<T> left, Atop<Function<Iota>,Array> right, Context &context)
 {
   return { left, evaluate(std::move(right), context) };
 }
 
 
-static Atop<Atop<Operator<Product>,Function<Times>>, Array>
+static Atop<Partial<Operator<Product>,Function<Times>>, Array>
 join(Operator<Product>, Atop<Function<Times>,Array> right, Context &)
 {
   return {{},std::move(right.right)};
@@ -1343,7 +1400,7 @@ join(Operator<Product>, Atop<Function<Times>,Array> right, Context &)
 static Atop<Fork<Function<Plus>, Operator<Product>, Function<Times>>,Array>
 join(
   Function<Plus>,
-  Atop<Atop<Operator<Product>, Function<Times> >, Array> right,
+  Atop<Partial<Operator<Product>, Function<Times> >, Array> right,
   Context &
 )
 {
@@ -1358,7 +1415,7 @@ Atop<
 >
 join(
   Operator<Outer> /*left*/,
-  Atop<Atop<Operator<Product>, Function<Times> >, Array> right,
+  Atop<Partial<Operator<Product>, Function<Times> >, Array> right,
   Context&
 )
 {
@@ -1370,23 +1427,23 @@ join(
 
 
 template <typename T>
-static Atop<Operator<T>,Array>
+static Partial<Operator<T>,Array>
 join(Operator<T> left, Values right, Context &)
 {
   return { left, makeArrayFromValues(std::move(right)) };
 }
 
 
-template <typename T>
-static Atop<Operator<T>,Function<Iota>>
-join(Operator<T>, Function<Iota>, Context &)
+template <typename T, typename U>
+static Partial<Operator<T>,Function<U>>
+join(Operator<T>, Function<U>, Context &)
 {
   return {};
 }
 
 
 static Atop<BoundOperator<Plus,Reduce>,Function<Iota>>
-join(Function<Plus>, Atop<Operator<Reduce>, Function<Iota>>, Context &)
+join(Function<Plus>, Partial<Operator<Reduce>, Function<Iota>>, Context &)
 {
   return {};
 }
@@ -1394,7 +1451,7 @@ join(Function<Plus>, Atop<Operator<Reduce>, Function<Iota>>, Context &)
 
 template <typename T>
 static Atop<BoundOperator<Plus,T>,Array>
-join(Function<Plus> /*left*/, Atop<Operator<T>,Array> right, Context &)
+join(Function<Plus> /*left*/, Partial<Operator<T>,Array> right, Context &)
 {
   return { {}, std::move(right.right) };
 }
@@ -1402,7 +1459,7 @@ join(Function<Plus> /*left*/, Atop<Operator<T>,Array> right, Context &)
 
 template <typename T>
 static Atop<BoundOperator<First,T>,Array>
-join(Function<First> /*left*/, Atop<Operator<T>,Array> right, Context &)
+join(Function<First> /*left*/, Partial<Operator<T>,Array> right, Context &)
 {
   return {{},std::move(right.right)};
 }
@@ -1450,6 +1507,12 @@ static auto join(Var left, T right, Context &context)
 
 
 static Array combine(Context &, int arg)
+{
+  return Array(arg);
+}
+
+
+static Array combine(Context &, Number arg)
 {
   return Array(arg);
 }
@@ -1639,6 +1702,7 @@ struct Placeholder {
   static constexpr Function<Equal>     equal = {};
   static constexpr Function<Plus>      plus = {};
   static constexpr Function<Times>     times = {};
+  static constexpr Function<Divide>    divide = {};
   static constexpr Function<Iota>      iota = {};
   static constexpr Function<Roll>      roll = {};
   static constexpr Function<Replicate> replicate = {};
@@ -1662,6 +1726,7 @@ constexpr Function<First>     Placeholder::first;
 constexpr Function<Equal>     Placeholder::equal;
 constexpr Function<Plus>      Placeholder::plus;
 constexpr Function<Times>     Placeholder::times;
+constexpr Function<Divide>    Placeholder::divide;
 constexpr Function<Iota>      Placeholder::iota;
 constexpr Function<Roll>      Placeholder::roll;
 constexpr Function<Replicate> Placeholder::replicate;
@@ -1711,6 +1776,13 @@ template <typename F>
 static vector<int> shapeOf(Expr<F> expr)
 {
   return shapeOf(evaluateExpr(std::move(expr)));
+}
+
+
+template <typename F>
+Expr<F>::operator Array() &&
+{
+  return evaluateExpr(std::move(*this));
 }
 
 
@@ -1803,4 +1875,12 @@ int main()
 
   assert(_(_.shape, _.shape, _.enclose, 1, 2) == _(0));
   assert(_(_.first, _.enclose, 1,2) == _(1,2));
+
+  {
+    Array X = _(1,2);
+
+    assert(
+      _(_(_.plus, _.reduce, X), _.divide, _.shape, X) == _(1, _.reshape, 1.5)
+    );
+  }
 }
