@@ -6,8 +6,6 @@
 #include <random>
 #include <sstream>
 
-#define ADD_ENCLOSE 0
-
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -57,11 +55,14 @@ struct Box {
 
 
 namespace {
+struct Boxed;
+}
+
+
+namespace {
 class Array {
 private:
-  enum class Type {
-    number, character, values
-  };
+  enum class Type { number, character, values , box };
 
   Type type;
 
@@ -83,6 +84,7 @@ private:
         new (&character) auto(arg.character);
         break;
       case Type::values:
+      case Type::box:
         new (&box) auto(std::move(arg.box));
         break;
     }
@@ -100,6 +102,7 @@ private:
         new (&character) auto(arg.character);
         break;
       case Type::values:
+      case Type::box:
         new (&box) auto(arg.box);
         break;
     }
@@ -115,6 +118,7 @@ private:
         destroyObject(character);
         break;
       case Type::values:
+      case Type::box:
         destroyObject(box);
         break;
     }
@@ -144,6 +148,8 @@ public:
     assert(!this->shape().empty());
   }
 
+  Array(Boxed arg);
+
   explicit Array(const Array &arg)
   : type(arg.type)
   {
@@ -165,6 +171,10 @@ public:
   }
 
   bool isNumber() const { return type == Type::number; }
+  bool isCharacter() const { return type == Type::character; }
+  bool isBox() const { return type == Type::box; }
+  bool isNonScalar() const { return type == Type::values; }
+  bool isSimple() const { return isNumber() || isCharacter(); }
 
   Number asNumber() const
   {
@@ -172,18 +182,10 @@ public:
     return number;
   }
 
-  bool isCharacter() const { return type == Type::character; }
-
   char asCharacter() const
   {
     assert(false);
   }
-
-  bool isNonScalar() const { return type == Type::values; }
-
-#if ADD_ENCLOSE
-  bool isSimple() const { return isNumber() || isCharacter(); }
-#endif
 
   Values &asValues()
   {
@@ -195,6 +197,13 @@ public:
   {
     assert(isNonScalar());
     return box.values;
+  }
+
+  Array boxedValue() &&
+  {
+    assert(type == Type::box);
+    assert(box.shape.empty());
+    return std::move(box.values[0]);
   }
 
   Array& operator=(Array &&arg)
@@ -227,6 +236,7 @@ public:
       case Type::character:
         return a.character == b.character;
       case Type::values:
+      case Type::box:
         return a.box == b.box;
     }
     assert(false);
@@ -243,11 +253,28 @@ public:
       case Type::values:
         stream << "non-scalar";
         break;
+      case Type::box:
+        assert(false);
+        break;
     }
 
     return stream;
   }
 };
+}
+
+
+namespace {
+struct Boxed {
+  Array array;
+};
+}
+
+
+Array::Array(Boxed arg)
+: type(Type::box),
+  box{{}, {std::move(arg.array)}}
+{
 }
 
 
@@ -448,9 +475,7 @@ struct Product;
 struct Outer;
 struct Roll;
 struct Replicate;
-#if ADD_ENCLOSE
 struct Enclose;
-#endif
 struct MemberOf;
 struct Not;
 struct Empty;
@@ -764,7 +789,10 @@ static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
 
 static Array evaluate(Atop<Function<First>,Array> arg, Context &)
 {
-  if (arg.right.shape().size() == 0) {
+  if (isScalar(arg.right)) {
+    if (arg.right.isBox()) {
+      return std::move(arg.right).boxedValue();
+    }
     assert(false);
   }
 
@@ -1211,16 +1239,14 @@ static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
 }
 
 
-#if ADD_ENCLOSE
 static Array evaluate(Atop<Function<Enclose>,Array> arg, Context &)
 {
   if (arg.right.isSimple()) {
     return std::move(arg.right);
   }
 
-  return Array(Box(std::move(arg));
+  return Boxed{std::move(arg.right)};
 }
-#endif
 
 
 template <typename T>
@@ -1619,9 +1645,7 @@ struct Placeholder {
   static constexpr Function<MemberOf>  member_of = {};
   static constexpr Function<Not>       isnot = {};
   static constexpr Function<Drop>      drop = {};
-#if ADD_ENCLOSE
   static constexpr Function<Enclose>   enclose = {};
-#endif
   static constexpr Operator<Each>      each = {};
   static constexpr Operator<Reduce>    reduce = {};
   static constexpr Operator<Product>   product = {};
@@ -1644,9 +1668,7 @@ constexpr Function<Replicate> Placeholder::replicate;
 constexpr Function<Drop>      Placeholder::drop;
 constexpr Function<MemberOf>  Placeholder::member_of;
 constexpr Function<Not>       Placeholder::isnot;
-#if ADD_ENCLOSE
 constexpr Function<Enclose>   Placeholder::enclose;
-#endif
 constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Operator<Each>      Placeholder::each;
@@ -1779,7 +1801,6 @@ int main()
     );
   }
 
-#if 0
   assert(_(_.shape, _.shape, _.enclose, 1, 2) == _(0));
-#endif
+  assert(_(_.first, _.enclose, 1,2) == _(1,2));
 }
