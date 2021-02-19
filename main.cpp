@@ -2006,4 +2006,12 @@ int main()
     Array Y = _(X, _.index, _(_.grade_up, X, _.assign, 6, _.roll, 40));
     assert(_(_.shape, Y) == _(6));
   }
+
+#if 0
+  {
+    Array txt = _("<b>blah</b>");
+    Array result = _(_.function, _(_.right, _.member_of, "<>"), txt);
+    assert(result == _(1,0,1,0,0,0,0,1,0,0,1));
+  }
+#endif
 }
