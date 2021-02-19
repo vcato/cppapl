@@ -5,6 +5,7 @@
 #include <memory>
 #include <random>
 #include <sstream>
+#include <algorithm>
 
 using std::vector;
 using std::cerr;
@@ -456,6 +457,7 @@ struct Outer;
 struct Roll;
 struct Replicate;
 struct Enclose;
+struct GradeUp;
 struct MemberOf;
 struct Not;
 struct Empty;
@@ -1299,6 +1301,50 @@ static Array evaluate(Atop<Function<Enclose>,Array> arg, Context &)
 }
 
 
+static bool isVector(const Array &arg)
+{
+  return arg.isNonScalar() && arg.shape().size() == 1;
+}
+
+
+static Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
+{
+  if (isVector(arg.right)) {
+    vector<int> indices;
+    int n = arg.right.shape()[0];
+
+    for (int i=0; i!=n; ++i) {
+      indices.push_back(i);
+    }
+
+    const Values &v = arg.right.values();
+
+    auto comp = [&](int a, int b)
+    {
+      if (v[a].isNumber() && v[b].isNumber()) {
+        return v[a].asNumber() < v[b].asNumber();
+      }
+      else {
+        assert(false);
+        return true;
+      }
+    };
+
+    std::sort(indices.begin(), indices.end(), comp);
+    Values values;
+
+    for (auto &x : indices) {
+      values.push_back(x+1);
+    }
+
+    return Array({n}, std::move(values));
+  }
+
+  cerr << "arg.right: " << arg.right << "\n";
+  assert(false);
+}
+
+
 template <typename T>
 static Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
 {
@@ -1727,6 +1773,7 @@ struct Placeholder {
   static constexpr Function<Not>       isnot = {};
   static constexpr Function<Drop>      drop = {};
   static constexpr Function<Enclose>   enclose = {};
+  static constexpr Function<GradeUp>   grade_up = {};
   static constexpr Operator<Each>      each = {};
   static constexpr Operator<Reduce>    reduce = {};
   static constexpr Operator<Product>   product = {};
@@ -1752,6 +1799,7 @@ constexpr Function<Drop>      Placeholder::drop;
 constexpr Function<MemberOf>  Placeholder::member_of;
 constexpr Function<Not>       Placeholder::isnot;
 constexpr Function<Enclose>   Placeholder::enclose;
+constexpr Function<GradeUp>   Placeholder::grade_up;
 constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Keyword<Index>      Placeholder::index;
@@ -1882,9 +1930,8 @@ int main()
     );
   }
 
-  {
-    assert(_(5,3,9, _.index, 3) == 9);
-  }
+  assert(_(5,3,9, _.index, 3) == 9);
+  assert(_(_.grade_up, 5,3,9) == _(2,1,3));
 
 #if 0
   {
