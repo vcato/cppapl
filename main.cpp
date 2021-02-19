@@ -546,9 +546,9 @@ static Array makeArrayFromValues(Values v)
 }
 
 
-static int roll(int value, Context &context)
+static int roll(int range, Context &context)
 {
-  return std::uniform_int_distribution<int>(1,value)(context.random_engine);
+  return std::uniform_int_distribution<int>(1,range)(context.random_engine);
 }
 
 
@@ -561,6 +561,14 @@ struct Optional {
   : has_value(true),
     value(std::move(arg))
   {
+  }
+
+  Optional(Optional &&arg)
+  : has_value(arg.has_value)
+  {
+    if (has_value) {
+      createObject(value, std::move(arg.value));
+    }
   }
 
   Optional()
@@ -830,6 +838,34 @@ static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
 }
 
 
+static Array
+evaluate(Fork<Array, Function<Roll>, Array> arg, Context &context)
+{
+  if (arg.left.isNumber() && arg.right.isNumber()) {
+    Optional<int> maybe_count = maybeInteger(arg.left);
+    Optional<int> maybe_range = maybeInteger(arg.right);
+
+    if (maybe_count && maybe_range) {
+      int count = *maybe_count;
+      int range = *maybe_range;
+      Values values;
+
+      for (int i=0; i!=count; ++i) {
+        values.push_back(roll(range, context));
+      }
+
+      return Array({count}, std::move(values));
+    }
+
+    assert(false);
+  }
+
+  cerr << "arg.left: " << arg.left << "\n";
+  cerr << "arg.right: " << arg.right << "\n";
+  assert(false);
+}
+
+
 template <typename A, typename B, typename C>
 static Atop<BoundOperator<A,B>,Function<C>>
 evaluate(Atop<BoundOperator<A,B>,Function<C>> arg, Context &)
@@ -1068,20 +1104,57 @@ static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
 }
 
 
-static Array evaluate(Fork<Array,Keyword<Index>,Array> arg, Context &)
+static bool isVector(const Array &arg)
 {
-  if (arg.left.isNonScalar()) {
-    if (arg.left.shape().size() == 1) {
-      if (Optional<int> maybe_index = maybeInteger(arg.right)) {
-        int index = *maybe_index;
+  return arg.isNonScalar() && arg.shape().size() == 1;
+}
 
-        if (index >= 1 && index <= arg.left.shape()[0]) {
-          return std::move(arg.left.values()[index-1]);
-        }
-        assert(false);
-      }
+
+static Optional<Array> maybeElement(const Array &a, const Array &index_array)
+{
+  if (Optional<int> maybe_index = maybeInteger(index_array)) {
+    int index = *maybe_index;
+
+    if (index >= 1 && index <= a.shape()[0]) {
+      return Array(a.values()[index-1]);
+    }
+    else {
       assert(false);
     }
+  }
+  else {
+    assert(false);
+  }
+}
+
+
+static Array evaluate(Fork<Array,Keyword<Index>,Array> arg, Context &)
+{
+  if (isVector(arg.left)) {
+    if (isVector(arg.right)) {
+      int n = arg.right.shape()[0];
+      Values values;
+
+      for (int i=0; i!=n; ++i) {
+        Optional<Array> maybe_element =
+          maybeElement(arg.left, arg.right.values()[i]);
+
+        if (maybe_element) {
+          values.push_back(std::move(*maybe_element));
+        }
+        else {
+          assert(false);
+        }
+      }
+
+      return Array({n}, std::move(values));
+    }
+
+    if (Optional<Array> maybe_element = maybeElement(arg.left, arg.right)) {
+      return std::move(*maybe_element);
+    }
+
+    cerr << "arg.right: " << arg.right << "\n";
     assert(false);
   }
 
@@ -1301,12 +1374,6 @@ static Array evaluate(Atop<Function<Enclose>,Array> arg, Context &)
 }
 
 
-static bool isVector(const Array &arg)
-{
-  return arg.isNonScalar() && arg.shape().size() == 1;
-}
-
-
 static Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
 {
   if (isVector(arg.right)) {
@@ -1391,10 +1458,11 @@ static Array join(Var left, Atop<Keyword<Assign>, Array> right, Context&)
 }
 
 
+template <typename T>
 static Atop<Keyword<Assign>,Array>
 join(
   Keyword<Assign> left,
-  Fork<Values, Function<Drop>, Array> right,
+  Fork<Values, Function<T>, Array> right,
   Context& context
 )
 {
@@ -1933,12 +2001,9 @@ int main()
   assert(_(5,3,9, _.index, 3) == 9);
   assert(_(_.grade_up, 5,3,9) == _(2,1,3));
 
-#if 0
   {
     Array X(0);
-
-    cerr << "X: " <<
-      _(X, _.index, _(_.grade_up, X, _.assign, 6, _.deal, 40)) << "\n";
+    Array Y = _(X, _.index, _(_.grade_up, X, _.assign, 6, _.roll, 40));
+    assert(_(_.shape, Y) == _(6));
   }
-#endif
 }
