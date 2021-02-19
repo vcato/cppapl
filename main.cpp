@@ -2010,7 +2010,7 @@ int main()
 #if 0
   {
     Array txt = _("<b>blah</b>");
-    Array result = _(_.function, _(_.right, _.member_of, "<>"), txt);
+    Array result = _(_.dfn(_.right, _.member_of, "<>"), txt);
     assert(result == _(1,0,1,0,0,0,0,1,0,0,1));
   }
 #endif
