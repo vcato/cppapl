@@ -33,116 +33,43 @@ static void destroyObject(T &object)
 }
 
 
+template <typename T, typename U>
+static void createObject(T& number, U&& arg)
+{
+  new (&number) auto(std::forward<U>(arg));
+}
+
+
 namespace {
 struct Array;
-}
-
-
 using Values = vector<Array>;
-
-
-namespace {
-struct Box {
-  vector<int> shape;
-  vector<Array> values;
-
-  friend bool operator==(const Box &a, const Box &b)
-  {
-    return a.shape == b.shape && a.values == b.values;
-  }
-};
-}
-
-
-namespace {
 struct Boxed;
 }
 
 
 namespace {
 class Array {
-private:
+public:
   enum class Type { number, character, values , box };
 
-  Type type;
-
-  union {
-    Number number;
-    char character;
-    Box box;
-  };
-
-  void createFrom(Array &&arg)
-  {
-    assert(type == arg.type);
-
-    switch (type) {
-      case Type::number:
-        new (&number) auto(arg.number);
-        break;
-      case Type::character:
-        new (&character) auto(arg.character);
-        break;
-      case Type::values:
-      case Type::box:
-        new (&box) auto(std::move(arg.box));
-        break;
-    }
-  }
-
-  void createFrom(const Array &arg)
-  {
-    assert(type == arg.type);
-
-    switch (type) {
-      case Type::number:
-        new (&number) auto(arg.number);
-        break;
-      case Type::character:
-        new (&character) auto(arg.character);
-        break;
-      case Type::values:
-      case Type::box:
-        new (&box) auto(arg.box);
-        break;
-    }
-  }
-
-  void destroy()
-  {
-    switch (type) {
-      case Type::number:
-        destroyObject(number);
-        break;
-      case Type::character:
-        destroyObject(character);
-        break;
-      case Type::values:
-      case Type::box:
-        destroyObject(box);
-        break;
-    }
-  }
-
 public:
-
   Array(Number arg)
-  : type(Type::number), number(arg)
+  : _type(Type::number), number(arg)
   {
   }
 
   Array(int arg)
-  : type(Type::number), number(arg)
+  : _type(Type::number), number(arg)
   {
   }
 
   Array(char arg)
-  : type(Type::character), character(arg)
+  : _type(Type::character), character(arg)
   {
   }
 
   Array(std::vector<int> shape, std::vector<Array> values)
-  : type(Type::values),
+  : _type(Type::values),
     box{std::move(shape), std::move(values)}
   {
     assert(!this->shape().empty());
@@ -151,18 +78,20 @@ public:
   Array(Boxed arg);
 
   explicit Array(const Array &arg)
-  : type(arg.type)
+  : _type(arg._type)
   {
     createFrom(arg);
   }
 
   Array(Array &&arg)
-  : type(arg.type)
+  : _type(arg._type)
   {
     createFrom(std::move(arg));
   }
 
   ~Array() { destroy(); }
+
+  Type type() const { return _type; }
 
   const vector<int> &shape() const
   {
@@ -170,15 +99,15 @@ public:
     return box.shape;
   }
 
-  bool isNumber() const { return type == Type::number; }
-  bool isCharacter() const { return type == Type::character; }
-  bool isBox() const { return type == Type::box; }
-  bool isNonScalar() const { return type == Type::values; }
+  bool isNumber() const { return _type == Type::number; }
+  bool isCharacter() const { return _type == Type::character; }
+  bool isBox() const { return _type == Type::box; }
+  bool isNonScalar() const { return _type == Type::values; }
   bool isSimple() const { return isNumber() || isCharacter(); }
 
   Number asNumber() const
   {
-    assert(type == Type::number);
+    assert(_type == Type::number);
     return number;
   }
 
@@ -187,13 +116,13 @@ public:
     assert(false);
   }
 
-  Values &asValues()
+  Values &values() &
   {
     assert(isNonScalar());
     return box.values;
   }
 
-  const Values &asValues() const
+  const Values &values() const &
   {
     assert(isNonScalar());
     return box.values;
@@ -201,7 +130,7 @@ public:
 
   Array boxedValue() &&
   {
-    assert(type == Type::box);
+    assert(_type == Type::box);
     assert(box.shape.empty());
     return std::move(box.values[0]);
   }
@@ -209,28 +138,28 @@ public:
   Array& operator=(Array &&arg)
   {
     destroy();
-    type = arg.type;
+    _type = arg._type;
     createFrom(std::move(arg));
     return *this;
   }
 
-  friend bool operator==(const Array &a, const Array &b)
+  static bool areEqual(const Array &a, const Array &b)
   {
-    if (a.type == Type::values && b.type == Type::number) {
+    if (a.isNonScalar() && b.isNumber()) {
       if (a.shape().size() == 1 && a.shape()[0] == 1) {
-        return a.asValues()[0] == b;
+        return areEqual(a.values()[0], b);
       }
 
       assert(false);
     }
 
-    if (a.type != b.type) {
-      cerr << "a.type: " << a.type << "\n";
-      cerr << "b.type: " << b.type << "\n";
+    if (a._type != b._type) {
+      cerr << "a.type: " << a._type << "\n";
+      cerr << "b.type: " << b._type << "\n";
       assert(false);
     }
 
-    switch (a.type) {
+    switch (a._type) {
       case Type::number:
         return a.number == b.number;
       case Type::character:
@@ -260,7 +189,69 @@ public:
 
     return stream;
   }
+
+private:
+  struct Box {
+    vector<int> shape;
+    vector<Array> values;
+
+    friend bool operator==(const Box &a, const Box &b)
+    {
+      return a.shape == b.shape && a.values == b.values;
+    }
+  };
+
+  Type _type;
+
+  union {
+    Number number;
+    char character;
+    Box box;
+  };
+
+  template <typename T>
+  void createFrom(T &&arg)
+  {
+    assert(_type == arg._type);
+
+    switch (_type) {
+      case Type::number:
+        createObject(number, std::forward<T>(arg).number);
+        break;
+      case Type::character:
+        createObject(character, std::forward<T>(arg).character);
+        break;
+      case Type::values:
+      case Type::box:
+        createObject(box, std::move(std::forward<T>(arg).box));
+        break;
+    }
+  }
+
+  void destroy()
+  {
+    switch (_type) {
+      case Type::number:
+        destroyObject(number);
+        break;
+      case Type::character:
+        destroyObject(character);
+        break;
+      case Type::values:
+      case Type::box:
+        destroyObject(box);
+        break;
+    }
+  }
 };
+}
+
+
+namespace {
+static bool operator==(const Array &a, const Array &b)
+{
+  return Array::areEqual(a,b);
+}
 }
 
 
@@ -272,7 +263,7 @@ struct Boxed {
 
 
 Array::Array(Boxed arg)
-: type(Type::box),
+: _type(Type::box),
   box{{}, {std::move(arg.array)}}
 {
 }
@@ -314,20 +305,6 @@ printNonScalarArrayOn(
 }
 
 
-static const Values &valuesOf(const Array &array)
-{
-  assert(array.isNonScalar());
-  return array.asValues();
-}
-
-
-static Values &valuesOf(Array &array)
-{
-  assert(array.isNonScalar());
-  return array.asValues();
-}
-
-
 static const vector<int> &shapeOf(const Array &a)
 {
   return a.shape();
@@ -343,7 +320,7 @@ static ostream& operator<<(ostream& stream, const Array &v)
     stream << "'" << v.asCharacter() << "'";
   }
   else if (v.isNonScalar()) {
-    printNonScalarArrayOn(stream, shapeOf(v), valuesOf(v));
+    printNonScalarArrayOn(stream, v.shape(), v.values());
   }
   else {
     assert(false);
@@ -483,6 +460,7 @@ struct MemberOf;
 struct Not;
 struct Empty;
 struct Assign;
+struct Index;
 struct Drop;
 }
 
@@ -510,20 +488,20 @@ static Array evaluateBinary(Array left, Array right, Function f)
     assert(!right.shape().empty());
     Values values;
 
-    for (auto &x : valuesOf(right)) {
+    for (auto &x : right.values()) {
       values.push_back(f(Array(left), std::move(x)));
     }
 
     return Array(right.shape(), std::move(values));
   }
 
-  if (valuesOf(left).size() == 1) {
-    if (valuesOf(right).size() == 1) {
+  if (left.values().size() == 1) {
+    if (right.values().size() == 1) {
       vector<int> shape = {1};
       Values values;
 
       values.push_back(
-        f(std::move(valuesOf(left)[0]), std::move(valuesOf(right)[0]))
+        f(std::move(left.values()[0]), std::move(right.values()[0]))
       );
 
       return Array(std::move(shape), std::move(values));
@@ -531,12 +509,12 @@ static Array evaluateBinary(Array left, Array right, Function f)
     assert(false);
   }
 
-  if (shapeOf(left) == shapeOf(right)) {
+  if (left.shape() == right.shape()) {
     vector<int> shape = left.shape();
     Values values;
-    size_t n = valuesOf(left).size();
-    auto in1 = valuesOf(left).begin();
-    auto in2 = valuesOf(right).begin();
+    size_t n = left.values().size();
+    auto in1 = left.values().begin();
+    auto in2 = right.values().begin();
 
     for (size_t i=0; i!=n; ++i) {
       values.push_back(f(std::move(*in1++), std::move(*in2++)));
@@ -545,7 +523,7 @@ static Array evaluateBinary(Array left, Array right, Function f)
     return Array(std::move(shape), std::move(values));
   }
 
-  cerr << "left.values: " << valuesOf(left) << "\n";
+  cerr << "left.values: " << left.values() << "\n";
   assert(false);
 }
 
@@ -800,7 +778,7 @@ static Array evaluate(Atop<Function<First>,Array> arg, Context &)
   }
 
   if (arg.right.shape().size() == 1) {
-    return std::move(valuesOf(arg.right)[0]);
+    return std::move(arg.right.values()[0]);
   }
 
   assert(false);
@@ -828,14 +806,14 @@ static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
   if (arg.right.shape().size() == 1) {
     Values result;
 
-    for (auto &x : valuesOf(arg.right)) {
+    for (auto &x : arg.right.values()) {
       if (!x.isNumber()) {
         assert(false);
       }
 
       int value = x.asNumber();
 
-      if (value != valuesOf(arg.right)[0].asNumber()) {
+      if (value != arg.right.values()[0].asNumber()) {
         assert(false);
       }
 
@@ -905,16 +883,16 @@ evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 
       int n_to_drop = *maybe_n_to_drop;
 
-      if (shapeOf(arg.right)[0] <= n_to_drop) {
+      if (arg.right.shape()[0] <= n_to_drop) {
         return Array({0}, {});
       }
 
-      vector<int> shape = {shapeOf(arg.right)[0] - n_to_drop};
-      auto iter = valuesOf(arg.right).begin();
+      vector<int> shape = {arg.right.shape()[0] - n_to_drop};
+      auto iter = arg.right.values().begin();
       iter += n_to_drop;
       Values values;
 
-      for (; iter != valuesOf(arg.right).end(); ++iter) {
+      for (; iter != arg.right.values().end(); ++iter) {
         values.push_back(std::move(*iter));
       }
 
@@ -946,7 +924,7 @@ static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
 
   vector<int> shape;
 
-  for (Array &x : valuesOf(arg.left)) {
+  for (Array &x : arg.left.values()) {
     Optional<int> maybe_int_x = maybeInteger(x);
 
     if (!maybe_int_x) {
@@ -960,7 +938,7 @@ static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
   Values values;
 
   for (int i=0; i!=n; ++i) {
-    values.push_back(valuesOf(arg.right)[i % valuesOf(arg.right).size()]);
+    values.push_back(arg.right.values()[i % arg.right.values().size()]);
   }
 
   return Array(std::move(shape), std::move(values));
@@ -994,13 +972,13 @@ evaluate(
   vector<int> shape = { n_rows, n_cols };
   Values values;
 
-  for (auto &x : valuesOf(arg.left)) {
+  for (auto &x : arg.left.values()) {
     if (!x.isNumber()) {
       assert(false);
     }
   }
 
-  for (auto &x : valuesOf(arg.right)) {
+  for (auto &x : arg.right.values()) {
     if (!x.isNumber()) {
       assert(false);
     }
@@ -1008,8 +986,8 @@ evaluate(
 
   for (int i=0; i!=n_rows; ++i) {
     for (int j=0; j!=n_cols; ++j) {
-      Number a = valuesOf(arg.left)[i].asNumber();
-      Number b = valuesOf(arg.right)[j].asNumber();
+      Number a = arg.left.values()[i].asNumber();
+      Number b = arg.right.values()[j].asNumber();
       values.push_back(a * b);
     }
   }
@@ -1026,7 +1004,7 @@ static bool isElementOf(const Array &a, const Array &b)
     return (a == Array(b));
   }
 
-  for (const Array &x : valuesOf(b)) {
+  for (const Array &x : b.values()) {
     if (a == x) {
       return true;
     }
@@ -1052,7 +1030,7 @@ evaluate(Fork<Array, Function<Divide>, Array> arg, Context&)
       vector<int> shape = arg.right.shape();
       Values values;
 
-      for (auto &x : arg.right.asValues()) {
+      for (auto &x : arg.right.values()) {
         if (!x.isNumber()) {
           assert(false);
         }
@@ -1077,14 +1055,37 @@ static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
     return isElementOf(left_value, arg.right);
   }
 
-  size_t n = valuesOf(arg.left).size();
+  size_t n = arg.left.values().size();
   Values values;
 
   for (size_t i=0; i!=n; ++i) {
-    values.push_back(isElementOf(valuesOf(arg.left)[i], arg.right));
+    values.push_back(isElementOf(arg.left.values()[i], arg.right));
   }
 
   return Array(arg.left.shape(), std::move(values));
+}
+
+
+static Array evaluate(Fork<Array,Keyword<Index>,Array> arg, Context &)
+{
+  if (arg.left.isNonScalar()) {
+    if (arg.left.shape().size() == 1) {
+      if (Optional<int> maybe_index = maybeInteger(arg.right)) {
+        int index = *maybe_index;
+
+        if (index >= 1 && index <= arg.left.shape()[0]) {
+          return std::move(arg.left.values()[index-1]);
+        }
+        assert(false);
+      }
+      assert(false);
+    }
+    assert(false);
+  }
+
+  cerr << "arg.left: " << arg.left << "\n";
+  cerr << "arg.right: " << arg.right << "\n";
+  assert(false);
 }
 
 
@@ -1125,7 +1126,7 @@ static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg, Context &)
   if (right.shape().size() == 1) {
     Number total = 0;
 
-    for (auto &x : valuesOf(right)) {
+    for (auto &x : right.values()) {
       if (!x.isNumber()) {
         assert(false);
       }
@@ -1148,20 +1149,20 @@ static Array evaluate(Atop<BoundOperator<First,Each>,Array> arg, Context &)
   else if (arg.right.shape().size() == 1) {
     Values result;
 
-    for (auto &x : valuesOf(arg.right)) {
+    for (auto &x : arg.right.values()) {
       if (x.isNumber()) {
         result.push_back(std::move(x));
       }
       else if (x.isNonScalar()) {
-        if (shapeOf(x).empty()) {
+        if (x.shape().empty()) {
           assert(false);
         }
-        else if (shapeOf(x).size() == 1) {
-          if (valuesOf(x).empty()) {
+        else if (x.shape().size() == 1) {
+          if (x.values().empty()) {
             assert(false);
           }
 
-          result.push_back(std::move(valuesOf(x)[0]));
+          result.push_back(std::move(x.values()[0]));
         }
         else {
           assert(false);
@@ -1210,13 +1211,13 @@ static Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
 
     return Array(std::move(shape), std::move(values));
   }
-  else if (shapeOf(left).size() == 1 && shapeOf(right).size() == 1) {
-    if (shapeOf(left)[0] != shapeOf(right)[0]) {
+  else if (left.shape().size() == 1 && right.shape().size() == 1) {
+    if (left.shape()[0] != right.shape()[0]) {
       assert(false);
     }
 
-    int n = shapeOf(left)[0];
-    replicateInto(values, valuesOf(left), valuesOf(right), n);
+    int n = left.shape()[0];
+    replicateInto(values, left.values(), right.values(), n);
   }
   else {
     assert(false);
@@ -1241,14 +1242,14 @@ evaluate(
   Array right = std::move(arg.right);
 
   if (left.shape().size() == 1 && right.shape().size() == 1) {
-    if (valuesOf(left).size() == valuesOf(right).size()) {
+    if (left.values().size() == right.values().size()) {
       Number result = 0;
-      size_t n = valuesOf(left).size();
+      size_t n = left.values().size();
 
       for (size_t i=0; i!=n; ++i) {
-        assert(valuesOf(left)[i].isNumber());
-        assert(valuesOf(right)[i].isNumber());
-        result += valuesOf(left)[i].asNumber()*valuesOf(right)[i].asNumber();
+        assert(left.values()[i].isNumber());
+        assert(right.values()[i].isNumber());
+        result += left.values()[i].asNumber()*right.values()[i].asNumber();
       }
 
       return result;
@@ -1277,11 +1278,11 @@ static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
     return isNot(arg.right);
   }
 
-  size_t n = valuesOf(arg.right).size();
+  size_t n = arg.right.values().size();
   Values values;
 
   for (size_t i=0; i!=n; ++i) {
-    values.push_back(isNot(valuesOf(arg.right)[i]));
+    values.push_back(isNot(arg.right.values()[i]));
   }
 
   return Array(arg.right.shape(), std::move(values));
@@ -1483,6 +1484,22 @@ static Values join(Array left, Array right, Context &)
   result.push_back(std::move(left));
   result.push_back(std::move(right));
   return result;
+}
+
+
+static Partial<Keyword<Index>, Array>
+join(Keyword<Index> left, Array right, Context &)
+{
+  return {std::move(left), std::move(right)};
+}
+
+
+template <typename T>
+static Fork<Values,T,Array> join(Array left, Partial<T,Array> right, Context &)
+{
+  Values new_left;
+  new_left.push_back(std::move(left));
+  return { std::move(new_left), std::move(right.left), std::move(right.right) };
 }
 
 
@@ -1716,6 +1733,7 @@ struct Placeholder {
   static constexpr Operator<Outer>     outer = {};
   static constexpr Keyword<Empty>      empty = {};
   static constexpr Keyword<Assign>     assign = {};
+  static constexpr Keyword<Index>      index = {};
 };
 }
 
@@ -1736,6 +1754,7 @@ constexpr Function<Not>       Placeholder::isnot;
 constexpr Function<Enclose>   Placeholder::enclose;
 constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
+constexpr Keyword<Index>      Placeholder::index;
 constexpr Operator<Each>      Placeholder::each;
 constexpr Operator<Reduce>    Placeholder::reduce;
 constexpr Operator<Product>   Placeholder::product;
@@ -1755,27 +1774,6 @@ template <typename F>
 static std::string str(Expr<F> expr)
 {
   return str(evaluateExpr(std::move(expr)));
-}
-
-
-template <typename F>
-static bool operator==(const Array &a, Expr<F> b)
-{
-  return a == evaluateExpr(std::move(b));
-}
-
-
-template <typename F1, typename F2>
-static bool operator==(Expr<F1> a, Expr<F2> b)
-{
-  return evaluateExpr(std::move(a)) == evaluateExpr(std::move(b));
-}
-
-
-template <typename F>
-static vector<int> shapeOf(Expr<F> expr)
-{
-  return shapeOf(evaluateExpr(std::move(expr)));
 }
 
 
@@ -1883,4 +1881,17 @@ int main()
       _(_(_.plus, _.reduce, X), _.divide, _.shape, X) == _(1, _.reshape, 1.5)
     );
   }
+
+  {
+    assert(_(5,3,9, _.index, 3) == 9);
+  }
+
+#if 0
+  {
+    Array X(0);
+
+    cerr << "X: " <<
+      _(X, _.index, _(_.grade_up, X, _.assign, 6, _.deal, 40)) << "\n";
+  }
+#endif
 }
