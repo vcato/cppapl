@@ -354,22 +354,16 @@ static Array makeCharArray(const char *arg)
 
 
 namespace {
-template <typename T>
-struct Keyword {
-};
-}
-
-
-namespace {
-template <typename T>
-struct Function {
-};
+template <typename T> struct Keyword { };
+template <typename T> struct Function { };
+template <typename T> struct Dfn { T expr; };
 }
 
 
 namespace {
 struct Context {
-  std::mt19937 random_engine;
+  std::mt19937 &random_engine;
+  Array *right_arg_ptr = nullptr;
 };
 }
 
@@ -464,6 +458,7 @@ struct Empty;
 struct Assign;
 struct Index;
 struct Drop;
+struct RightArg;
 }
 
 
@@ -1413,6 +1408,80 @@ static Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
 
 
 template <typename T>
+struct MakeRValue {
+  T operator()(T arg) const
+  {
+    return arg;
+  }
+};
+
+
+template <typename T>
+struct MakeRValue<const T&> {
+  T operator()(const T &arg) const
+  {
+    return T(arg);
+  }
+};
+
+
+template <typename T>
+struct MakeRValue<T&> {
+  Var operator()(T &arg) const
+  {
+    return Var{&arg};
+  }
+};
+
+
+template <size_t n>
+struct MakeRValue<const char (&)[n]> {
+  Array operator()(const char *arg) const
+  {
+    return makeCharArray(arg);
+  }
+};
+
+
+static Array combine(Context &, int arg)
+{
+  return Array(arg);
+}
+
+
+static Array combine(Context &, Number arg)
+{
+  return Array(arg);
+}
+
+
+template <typename T>
+static Function<T> combine(Context &, Function<T> arg)
+{
+  return arg;
+}
+
+
+template <typename T>
+static Keyword<T> combine(Context &, Keyword<T> arg)
+{
+  return arg;
+}
+
+
+static Array combine(Context &, Array arg)
+{
+  return arg;
+}
+
+
+static Var combine(Context &, Var arg)
+{
+  return arg;
+}
+
+
+template <typename T>
 static Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
 {
   return { left, std::move(right) };
@@ -1438,7 +1507,7 @@ template <typename T>
 static auto join(T left, Var right, Context &context)
 {
   assert(right.ptr);
-  return join(left, Array(*right.ptr), context);
+  return join(std::move(left), Array(*right.ptr), context);
 }
 
 
@@ -1494,6 +1563,14 @@ static Atop<Function<T1>,Array>
 join(Function<T1> left, Atop<Function<T2>,Array> right, Context &context)
 {
   return join(left, evaluate(std::move(right), context), context);
+}
+
+
+template <typename T>
+static Fork<Keyword<RightArg>, Function<T>, Array>
+join(Keyword<RightArg> left, Atop<Function<T>, Array> right, Context &)
+{
+  return { std::move(left), std::move(right.left), std::move(right.right) };
 }
 
 
@@ -1637,41 +1714,11 @@ static auto join(Var left, T right, Context &context)
 }
 
 
-static Array combine(Context &, int arg)
-{
-  return Array(arg);
-}
-
-
-static Array combine(Context &, Number arg)
-{
-  return Array(arg);
-}
-
-
 template <typename T>
-static Function<T> combine(Context &, Function<T> arg)
+static Atop<Dfn<Expr<T>>,Array>
+join(Dfn<Expr<T>> left, Array right, Context&)
 {
-  return arg;
-}
-
-
-template <typename T>
-static Keyword<T> combine(Context &, Keyword<T> arg)
-{
-  return arg;
-}
-
-
-static Array combine(Context &, Array arg)
-{
-  return arg;
-}
-
-
-static Var combine(Context &, Var arg)
-{
-  return arg;
+  return {std::move(left), std::move(right)};
 }
 
 
@@ -1687,6 +1734,78 @@ static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 }
 
 
+template <typename...Args>
+static auto evaluateInContext(Context &context, Args &&...args)
+{
+  return
+    evaluate(
+      combine(context, MakeRValue<Args>()(std::forward<Args>(args))...),
+      context
+    );
+}
+
+
+template <typename F>
+static auto evaluateExprInContext(const F &f, Context &context)
+{
+  auto eval = [&](auto &&...args)
+  {
+    return
+      evaluateInContext(
+        context,
+        std::forward<decltype(args)>(args)...
+      );
+  };
+
+  return f(eval);
+}
+
+
+#if 0
+evaluateExprInContext(const F&, Context&) from ‘Fork<Keyword<RightArg>, Function<MemberOf>, Array>’ to ‘Array’
+#endif
+
+
+template <typename T>
+static Array evaluate(Atop<Dfn<T>,Array> arg, Context &context)
+{
+  Context c{context.random_engine};
+  c.right_arg_ptr = &arg.right;
+  auto result = evaluateExprInContext(arg.left.expr.f, c);
+  arg.left.expr.evaluated = true;
+  return result;
+}
+
+
+template <typename T>
+static auto evaluate(Dfn<T> arg, Context&)
+{
+  return arg;
+}
+
+
+static auto
+evaluate(
+  Fork<Keyword<RightArg>, Function<MemberOf>, Array> arg,
+  Context &context
+)
+{
+  if (!context.right_arg_ptr) {
+    assert(false);
+  }
+
+  return
+    evaluate(
+      Fork<Array, Function<MemberOf>, Array>{
+        Array(*context.right_arg_ptr),
+        std::move(arg.mid),
+        std::move(arg.right)
+      },
+      context
+    );
+}
+
+
 template <typename F>
 static Expr<F> combine(Context&, Expr<F> expr)
 {
@@ -1694,44 +1813,10 @@ static Expr<F> combine(Context&, Expr<F> expr)
 }
 
 
-template <typename T>
-struct MakeRValue {
-  T operator()(T &arg) const
-  {
-    return T(arg);
-  }
-};
-
-
-template <typename F>
-struct MakeRValue<Expr<F>> {
-  Expr<F> operator()(Expr<F> &arg) const
-  {
-    return std::move(arg);
-  }
-};
-
-
-template <typename...Args>
-static auto evaluateInContext(Context &context, Args &&...args)
-{
-  return evaluate(combine(context, MakeRValue<Args>()(args)...), context);
-}
-
-
 template <typename F>
 static auto evaluateExpr(Expr<F> &&expr)
 {
-  auto eval = [&](auto &&...args)
-  {
-    return
-      evaluateInContext(
-        expr.context,
-        std::forward<decltype(args)>(args)...
-      );
-  };
-
-  auto result = expr.f(eval);
+  auto result = evaluateExprInContext(expr.f, expr.context);
   expr.evaluated = true;
   return result;
 }
@@ -1782,33 +1867,6 @@ join(
 }
 
 
-template <typename T>
-struct MakeRValue<const T&> {
-  T operator()(const T &arg) const
-  {
-    return T(arg);
-  }
-};
-
-
-template <typename T>
-struct MakeRValue<T&> {
-  Var operator()(T &arg) const
-  {
-    return Var{&arg};
-  }
-};
-
-
-template <size_t n>
-struct MakeRValue<const char (&)[n]> {
-  Array operator()(const char *arg) const
-  {
-    return makeCharArray(arg);
-  }
-};
-
-
 template <typename ...Args>
 static auto makeExpr(Context &context, Args &&...args)
 {
@@ -1819,7 +1877,8 @@ static auto makeExpr(Context &context, Args &&...args)
 
 namespace {
 struct Placeholder {
-  Context context;
+  std::mt19937 random_engine;
+  Context context{random_engine};
 
   template <typename ...Args>
   auto operator()(Args &&...args)
@@ -1849,6 +1908,14 @@ struct Placeholder {
   static constexpr Keyword<Empty>      empty = {};
   static constexpr Keyword<Assign>     assign = {};
   static constexpr Keyword<Index>      index = {};
+  static constexpr Keyword<RightArg>   right_arg = {};
+
+  template <typename ...Args>
+  constexpr auto dfn(Args &&...args)
+  {
+    auto x = makeExpr(context, std::forward<decltype(args)>(args)...);
+    return Dfn<decltype(x)>{std::move(x)};
+  }
 };
 }
 
@@ -1871,6 +1938,7 @@ constexpr Function<GradeUp>   Placeholder::grade_up;
 constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Keyword<Index>      Placeholder::index;
+constexpr Keyword<RightArg>   Placeholder::right_arg;
 constexpr Operator<Each>      Placeholder::each;
 constexpr Operator<Reduce>    Placeholder::reduce;
 constexpr Operator<Product>   Placeholder::product;
@@ -2007,11 +2075,9 @@ int main()
     assert(_(_.shape, Y) == _(6));
   }
 
-#if 0
   {
     Array txt = _("<b>blah</b>");
-    Array result = _(_.dfn(_.right, _.member_of, "<>"), txt);
+    Array result = _(_.dfn(_.right_arg, _.member_of, "<>"), txt);
     assert(result == _(1,0,1,0,0,0,0,1,0,0,1));
   }
-#endif
 }
