@@ -7,6 +7,8 @@
 #include <sstream>
 #include <algorithm>
 
+#define CHANGE_INDEX 0
+
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -357,6 +359,9 @@ namespace {
 template <typename T> struct Keyword { };
 template <typename T> struct Function { };
 template <typename T> struct Dfn { T expr; };
+#if CHANGE_INDEX
+template <typename T> struct Index { T expr; };
+#endif
 }
 
 
@@ -456,7 +461,9 @@ struct MemberOf;
 struct Not;
 struct Empty;
 struct Assign;
+#if !CHANGE_INDEX
 struct Index;
+#endif
 struct Drop;
 struct RightArg;
 }
@@ -1123,6 +1130,45 @@ static Optional<Array> maybeElement(const Array &a, const Array &index_array)
 }
 
 
+#if CHANGE_INDEX
+template <typename T>
+static Array evaluate(Atop<Array,Index<T>> arg, Context &context)
+{
+  Array right = evaluate(std::move(arg.right.expr), context);
+
+  if (isVector(arg.left)) {
+    if (isVector(right)) {
+      int n = right.shape()[0];
+      Values values;
+
+      for (int i=0; i!=n; ++i) {
+        Optional<Array> maybe_element =
+          maybeElement(arg.left, right.values()[i]);
+
+        if (maybe_element) {
+          values.push_back(std::move(*maybe_element));
+        }
+        else {
+          assert(false);
+        }
+      }
+
+      return Array({n}, std::move(values));
+    }
+
+    if (Optional<Array> maybe_element = maybeElement(arg.left, right)) {
+      return std::move(*maybe_element);
+    }
+
+    cerr << "arg.right: " << right << "\n";
+    assert(false);
+  }
+
+  cerr << "arg.left: " << arg.left << "\n";
+  cerr << "right: " << right << "\n";
+  assert(false);
+}
+#else
 static Array evaluate(Fork<Array,Keyword<Index>,Array> arg, Context &)
 {
   if (isVector(arg.left)) {
@@ -1157,6 +1203,7 @@ static Array evaluate(Fork<Array,Keyword<Index>,Array> arg, Context &)
   cerr << "arg.right: " << arg.right << "\n";
   assert(false);
 }
+#endif
 
 
 template <typename T>
@@ -1167,6 +1214,22 @@ static Array evaluate(Fork<Values,T,Array> arg, Context &context)
   auto x = Return{std::move(left), arg.mid, std::move(arg.right)};
   return evaluate(std::move(x), context);
 }
+
+
+#if CHANGE_INDEX
+template <typename T>
+static Array evaluate(Atop<Values,T> arg, Context &context)
+{
+  return
+    evaluate(
+      Atop<Array,T>{
+        makeArrayFromValues(std::move(arg.left)),
+        std::move(arg.right),
+      },
+      context
+    );
+}
+#endif
 
 
 static Array evaluate(Fork<Array,Function<Plus>,Array> arg, Context &)
@@ -1456,26 +1519,7 @@ static Array combine(Context &, Number arg)
 
 
 template <typename T>
-static Function<T> combine(Context &, Function<T> arg)
-{
-  return arg;
-}
-
-
-template <typename T>
-static Keyword<T> combine(Context &, Keyword<T> arg)
-{
-  return arg;
-}
-
-
-static Array combine(Context &, Array arg)
-{
-  return arg;
-}
-
-
-static Var combine(Context &, Var arg)
+static T combine(Context &, T arg)
 {
   return arg;
 }
@@ -1678,11 +1722,13 @@ static Values join(Array left, Array right, Context &)
 }
 
 
+#if !CHANGE_INDEX
 static Partial<Keyword<Index>, Array>
 join(Keyword<Index> left, Array right, Context &)
 {
   return {std::move(left), std::move(right)};
 }
+#endif
 
 
 template <typename T>
@@ -1720,6 +1766,46 @@ join(Dfn<Expr<T>> left, Array right, Context&)
 {
   return {std::move(left), std::move(right)};
 }
+
+
+#if CHANGE_INDEX
+template <typename T>
+static Atop<Array,Index<Expr<T>>>
+join(Array left, Index<Expr<T>> right, Context &)
+{
+  return { std::move(left), std::move(right) };
+}
+#endif
+
+
+#if CHANGE_INDEX
+template <typename T>
+static Atop<Values, Index<T>>
+join(Array left, Atop<Array, Index<T>> right, Context&)
+{
+  return {
+    { std::move(left), std::move(right.left) },
+    std::move(right.right)
+  };
+}
+#endif
+
+
+#if CHANGE_INDEX
+template <typename T>
+static Atop<Values, Index<T>>
+join(Array left, Atop<Values, Index<T>> right, Context&)
+{
+  Values new_left;
+  new_left.push_back(std::move(left));
+
+  for (auto &x : right.left) {
+    new_left.push_back(std::move(x));
+  }
+
+  return { std::move(new_left), std::move(right.right) };
+}
+#endif
 
 
 template <typename Arg1, typename Arg2, typename ...Args>
@@ -1761,11 +1847,6 @@ static auto evaluateExprInContext(const F &f, Context &context)
 }
 
 
-#if 0
-evaluateExprInContext(const F&, Context&) from ‘Fork<Keyword<RightArg>, Function<MemberOf>, Array>’ to ‘Array’
-#endif
-
-
 template <typename T>
 static Array evaluate(Atop<Dfn<T>,Array> arg, Context &context)
 {
@@ -1803,13 +1884,6 @@ evaluate(
       },
       context
     );
-}
-
-
-template <typename F>
-static Expr<F> combine(Context&, Expr<F> expr)
-{
-  return expr;
 }
 
 
@@ -1907,7 +1981,9 @@ struct Placeholder {
   static constexpr Operator<Outer>     outer = {};
   static constexpr Keyword<Empty>      empty = {};
   static constexpr Keyword<Assign>     assign = {};
+#if !CHANGE_INDEX
   static constexpr Keyword<Index>      index = {};
+#endif
   static constexpr Keyword<RightArg>   right_arg = {};
 
   template <typename ...Args>
@@ -1916,6 +1992,15 @@ struct Placeholder {
     auto x = makeExpr(context, std::forward<decltype(args)>(args)...);
     return Dfn<decltype(x)>{std::move(x)};
   }
+
+#if CHANGE_INDEX
+  template <typename ...Args>
+  constexpr auto index(Args &&...args)
+  {
+    auto x = makeExpr(context, std::forward<decltype(args)>(args)...);
+    return Index<decltype(x)>{std::move(x)};
+  }
+#endif
 };
 }
 
@@ -1937,7 +2022,9 @@ constexpr Function<Enclose>   Placeholder::enclose;
 constexpr Function<GradeUp>   Placeholder::grade_up;
 constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
+#if !CHANGE_INDEX
 constexpr Keyword<Index>      Placeholder::index;
+#endif
 constexpr Keyword<RightArg>   Placeholder::right_arg;
 constexpr Operator<Each>      Placeholder::each;
 constexpr Operator<Reduce>    Placeholder::reduce;
@@ -2066,12 +2153,20 @@ int main()
     );
   }
 
+#if CHANGE_INDEX
+  assert(_(5,3,9, _.index(3)) == 9);
+#else
   assert(_(5,3,9, _.index, 3) == 9);
+#endif
   assert(_(_.grade_up, 5,3,9) == _(2,1,3));
 
   {
     Array X(0);
+#if CHANGE_INDEX
+    Array Y = _(X, _.index(_.grade_up, X, _.assign, 6, _.roll, 40));
+#else
     Array Y = _(X, _.index, _(_.grade_up, X, _.assign, 6, _.roll, 40));
+#endif
     assert(_(_.shape, Y) == _(6));
   }
 
