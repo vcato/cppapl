@@ -7,6 +7,8 @@
 #include <sstream>
 #include <algorithm>
 
+#define ADD_TEST 0
+
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -492,6 +494,16 @@ static Array evaluateBinary(Array left, Array right, Function f)
     return Array(right.shape(), std::move(values));
   }
 
+  if (isScalar(right)) {
+    Values values;
+
+    for (auto &x : left.values()) {
+      values.push_back(f(std::move(x), Array(right)));
+    }
+
+    return Array(left.shape(), std::move(values));
+  }
+
   if (left.values().size() == 1) {
     if (right.values().size() == 1) {
       vector<int> shape = {1};
@@ -679,8 +691,13 @@ static Array evaluateNumberBinary(Fork<Array,T,Array> arg, const G &g)
 {
   auto f = [&](const Array& a, const Array& b)
   {
-    if (a.isNumber() && b.isNumber()) {
-      return g(a.asNumber(), b.asNumber());
+    if (a.isNumber()) {
+      if (b.isNumber()) {
+        return g(a.asNumber(), b.asNumber());
+      }
+      else {
+        assert(false);
+      }
     }
     else {
       assert(false);
@@ -2109,4 +2126,11 @@ int main()
     Array result = _(_.dfn(_.right_arg, _.member_of, "<>"), txt);
     assert(result == _(1,0,1,0,0,0,0,1,0,0,1));
   }
+
+#if ADD_TEST
+  {
+    Array result = _(1,2,3, _.plus, _.enclose, 4,5,6);
+    assert(result == _(_(5,6,7),_(6,7,8), _(7,8,9)));
+  }
+#endif
 }
