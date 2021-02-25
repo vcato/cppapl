@@ -7,8 +7,6 @@
 #include <sstream>
 #include <algorithm>
 
-#define CHANGE_INDEX 0
-
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -359,9 +357,7 @@ namespace {
 template <typename T> struct Keyword { };
 template <typename T> struct Function { };
 template <typename T> struct Dfn { T expr; };
-#if CHANGE_INDEX
-template <typename T> struct Index { T expr; };
-#endif
+template <typename T> struct Index { T arg; };
 }
 
 
@@ -461,9 +457,6 @@ struct MemberOf;
 struct Not;
 struct Empty;
 struct Assign;
-#if !CHANGE_INDEX
-struct Index;
-#endif
 struct Drop;
 struct RightArg;
 }
@@ -695,6 +688,60 @@ static Array evaluateNumberBinary(Fork<Array,T,Array> arg, const G &g)
   };
 
   return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
+}
+
+
+static bool isElementOf(const Array &a, const Array &b)
+{
+  assert(isScalar(a));
+
+  if (isScalar(b)) {
+    return (a == Array(b));
+  }
+
+  for (const Array &x : b.values()) {
+    if (a == x) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+
+static bool isVector(const Array &arg)
+{
+  return arg.isNonScalar() && arg.shape().size() == 1;
+}
+
+
+static Optional<Array> maybeElement(const Array &a, const Array &index_array)
+{
+  if (Optional<int> maybe_index = maybeInteger(index_array)) {
+    int index = *maybe_index;
+
+    if (index >= 1 && index <= a.shape()[0]) {
+      return Array(a.values()[index-1]);
+    }
+    else {
+      assert(false);
+    }
+  }
+  else {
+    assert(false);
+  }
+}
+
+
+static bool isNot(const Array &a)
+{
+  Optional<int> maybe_x = maybeInteger(a);
+
+  if (maybe_x != 0 && maybe_x != 1) {
+    assert(false);
+  }
+
+  return !*maybe_x;
 }
 
 
@@ -1036,24 +1083,6 @@ evaluate(
 }
 
 
-static bool isElementOf(const Array &a, const Array &b)
-{
-  assert(isScalar(a));
-
-  if (isScalar(b)) {
-    return (a == Array(b));
-  }
-
-  for (const Array &x : b.values()) {
-    if (a == x) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-
 static Array
 evaluate(Fork<Array, Function<Divide>, Array> arg, Context&)
 {
@@ -1106,35 +1135,9 @@ static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
 }
 
 
-static bool isVector(const Array &arg)
+static Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
 {
-  return arg.isNonScalar() && arg.shape().size() == 1;
-}
-
-
-static Optional<Array> maybeElement(const Array &a, const Array &index_array)
-{
-  if (Optional<int> maybe_index = maybeInteger(index_array)) {
-    int index = *maybe_index;
-
-    if (index >= 1 && index <= a.shape()[0]) {
-      return Array(a.values()[index-1]);
-    }
-    else {
-      assert(false);
-    }
-  }
-  else {
-    assert(false);
-  }
-}
-
-
-#if CHANGE_INDEX
-template <typename T>
-static Array evaluate(Atop<Array,Index<T>> arg, Context &context)
-{
-  Array right = evaluate(std::move(arg.right.expr), context);
+  Array &right = arg.right.arg;
 
   if (isVector(arg.left)) {
     if (isVector(right)) {
@@ -1168,42 +1171,6 @@ static Array evaluate(Atop<Array,Index<T>> arg, Context &context)
   cerr << "right: " << right << "\n";
   assert(false);
 }
-#else
-static Array evaluate(Fork<Array,Keyword<Index>,Array> arg, Context &)
-{
-  if (isVector(arg.left)) {
-    if (isVector(arg.right)) {
-      int n = arg.right.shape()[0];
-      Values values;
-
-      for (int i=0; i!=n; ++i) {
-        Optional<Array> maybe_element =
-          maybeElement(arg.left, arg.right.values()[i]);
-
-        if (maybe_element) {
-          values.push_back(std::move(*maybe_element));
-        }
-        else {
-          assert(false);
-        }
-      }
-
-      return Array({n}, std::move(values));
-    }
-
-    if (Optional<Array> maybe_element = maybeElement(arg.left, arg.right)) {
-      return std::move(*maybe_element);
-    }
-
-    cerr << "arg.right: " << arg.right << "\n";
-    assert(false);
-  }
-
-  cerr << "arg.left: " << arg.left << "\n";
-  cerr << "arg.right: " << arg.right << "\n";
-  assert(false);
-}
-#endif
 
 
 template <typename T>
@@ -1216,7 +1183,6 @@ static Array evaluate(Fork<Values,T,Array> arg, Context &context)
 }
 
 
-#if CHANGE_INDEX
 template <typename T>
 static Array evaluate(Atop<Values,T> arg, Context &context)
 {
@@ -1229,7 +1195,6 @@ static Array evaluate(Atop<Values,T> arg, Context &context)
       context
     );
 }
-#endif
 
 
 static Array evaluate(Fork<Array,Function<Plus>,Array> arg, Context &)
@@ -1390,18 +1355,6 @@ evaluate(
     assert(false);
   }
   assert(false);
-}
-
-
-static bool isNot(const Array &a)
-{
-  Optional<int> maybe_x = maybeInteger(a);
-
-  if (maybe_x != 0 && maybe_x != 1) {
-    assert(false);
-  }
-
-  return !*maybe_x;
 }
 
 
@@ -1722,15 +1675,6 @@ static Values join(Array left, Array right, Context &)
 }
 
 
-#if !CHANGE_INDEX
-static Partial<Keyword<Index>, Array>
-join(Keyword<Index> left, Array right, Context &)
-{
-  return {std::move(left), std::move(right)};
-}
-#endif
-
-
 template <typename T>
 static Fork<Values,T,Array> join(Array left, Partial<T,Array> right, Context &)
 {
@@ -1768,33 +1712,18 @@ join(Dfn<Expr<T>> left, Array right, Context&)
 }
 
 
-#if CHANGE_INDEX
-template <typename T>
-static Atop<Array,Index<Expr<T>>>
-join(Array left, Index<Expr<T>> right, Context &)
-{
-  return { std::move(left), std::move(right) };
-}
-#endif
-
-
-#if CHANGE_INDEX
-template <typename T>
-static Atop<Values, Index<T>>
-join(Array left, Atop<Array, Index<T>> right, Context&)
+static Atop<Values, Index<Array>>
+join(Array left, Atop<Array, Index<Array>> right, Context&)
 {
   return {
     { std::move(left), std::move(right.left) },
     std::move(right.right)
   };
 }
-#endif
 
 
-#if CHANGE_INDEX
-template <typename T>
-static Atop<Values, Index<T>>
-join(Array left, Atop<Values, Index<T>> right, Context&)
+static Atop<Values, Index<Array>>
+join(Array left, Atop<Values, Index<Array>> right, Context&)
 {
   Values new_left;
   new_left.push_back(std::move(left));
@@ -1805,18 +1734,14 @@ join(Array left, Atop<Values, Index<T>> right, Context&)
 
   return { std::move(new_left), std::move(right.right) };
 }
-#endif
 
 
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
-  return
-    join(
-      evaluate(std::move(arg1), context),
-      combine(context, std::move(arg2), std::move(args)...),
-      context
-    );
+  auto right = combine(context, std::move(arg2), std::move(args)...);
+  auto left = evaluate(std::move(arg1), context);
+  return join(std::move(left), std::move(right), context);
 }
 
 
@@ -1893,6 +1818,31 @@ static auto evaluateExpr(Expr<F> &&expr)
   auto result = evaluateExprInContext(expr.f, expr.context);
   expr.evaluated = true;
   return result;
+}
+
+
+static Atop<Array,Index<Array>>
+join(Array left, Index<Array> right, Context &)
+{
+  return { std::move(left), std::move(right) };
+}
+
+
+template <typename T>
+static Atop<Array,Index<Array>>
+join(Var left, Index<Expr<T>> right, Context &context)
+{
+  Array i = evaluateExpr(std::move(right.arg));
+  return join(Array(*left.ptr), Index<Array>{std::move(i)}, context);
+}
+
+
+template <typename T>
+static Atop<Array,Index<Array>>
+join(Array left, Index<Expr<T>> right, Context &context)
+{
+  Array i = evaluateExpr(std::move(right.arg));
+  return join(std::move(left), Index<Array>{std::move(i)}, context);
 }
 
 
@@ -1981,9 +1931,6 @@ struct Placeholder {
   static constexpr Operator<Outer>     outer = {};
   static constexpr Keyword<Empty>      empty = {};
   static constexpr Keyword<Assign>     assign = {};
-#if !CHANGE_INDEX
-  static constexpr Keyword<Index>      index = {};
-#endif
   static constexpr Keyword<RightArg>   right_arg = {};
 
   template <typename ...Args>
@@ -1993,14 +1940,12 @@ struct Placeholder {
     return Dfn<decltype(x)>{std::move(x)};
   }
 
-#if CHANGE_INDEX
   template <typename ...Args>
   constexpr auto index(Args &&...args)
   {
     auto x = makeExpr(context, std::forward<decltype(args)>(args)...);
     return Index<decltype(x)>{std::move(x)};
   }
-#endif
 };
 }
 
@@ -2022,9 +1967,6 @@ constexpr Function<Enclose>   Placeholder::enclose;
 constexpr Function<GradeUp>   Placeholder::grade_up;
 constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
-#if !CHANGE_INDEX
-constexpr Keyword<Index>      Placeholder::index;
-#endif
 constexpr Keyword<RightArg>   Placeholder::right_arg;
 constexpr Operator<Each>      Placeholder::each;
 constexpr Operator<Reduce>    Placeholder::reduce;
@@ -2153,20 +2095,12 @@ int main()
     );
   }
 
-#if CHANGE_INDEX
   assert(_(5,3,9, _.index(3)) == 9);
-#else
-  assert(_(5,3,9, _.index, 3) == 9);
-#endif
   assert(_(_.grade_up, 5,3,9) == _(2,1,3));
 
   {
     Array X(0);
-#if CHANGE_INDEX
     Array Y = _(X, _.index(_.grade_up, X, _.assign, 6, _.roll, 40));
-#else
-    Array Y = _(X, _.index, _(_.grade_up, X, _.assign, 6, _.roll, 40));
-#endif
     assert(_(_.shape, Y) == _(6));
   }
 
