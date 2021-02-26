@@ -771,6 +771,21 @@ static Optional<Array> maybeElement(const Array &a, const Array &index_array)
       assert(false);
     }
   }
+  else if (index_array.isNonScalar()) {
+    Values values;
+
+    for (const auto &x : index_array.values()) {
+      Optional<Array> y = maybeElement(a,x);
+
+      if (!y) {
+        return {};
+      }
+
+      values.push_back(std::move(*y));
+    }
+
+    return Array(index_array.shape(), std::move(values));
+  }
   else {
     assert(false);
   }
@@ -2158,5 +2173,10 @@ int main()
     Array result = _(1,2,3, _.plus, _.enclose, 4,5,6);
     Array expected = _(_(5,6,7), _(6,7,8), _(7,8,9));
     assert(result == expected);
+  }
+
+  {
+    Array result = _(_(5,6), _.index(2,2,_.reshape,1,2,2,1));
+    assert(result == _(2,2, _.reshape, 5,6,6,5));
   }
 }
