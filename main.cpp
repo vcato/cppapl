@@ -7,8 +7,6 @@
 #include <sstream>
 #include <algorithm>
 
-#define ADD_TEST 0
-
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -138,6 +136,13 @@ public:
     return std::move(box.values[0]);
   }
 
+  const Array& boxedValue() const &
+  {
+    assert(_type == Type::box);
+    assert(box.shape.empty());
+    return box.values[0];
+  }
+
   Array& operator=(Array &&arg)
   {
     destroy();
@@ -186,7 +191,7 @@ public:
         stream << "non-scalar";
         break;
       case Type::box:
-        assert(false);
+        stream << "box";
         break;
     }
 
@@ -324,6 +329,9 @@ static ostream& operator<<(ostream& stream, const Array &v)
   }
   else if (v.isNonScalar()) {
     printNonScalarArrayOn(stream, v.shape(), v.values());
+  }
+  else if (v.isBox()) {
+    stream << "box("  << v.boxedValue() << ")";
   }
   else {
     assert(false);
@@ -481,7 +489,23 @@ static Array evaluateBinary(Array left, Array right, Function f)
 {
   if (isScalar(left)) {
     if (isScalar(right)) {
-      return f(std::move(left), std::move(right));
+      if (left.isSimple()) {
+        if (right.isSimple()) {
+          return f(std::move(left), std::move(right));
+        }
+        else if (right.isBox()) {
+          Array result =
+            evaluateBinary(std::move(left), std::move(right).boxedValue(), f);
+
+          return result;
+        }
+        else {
+          assert(false);
+        }
+      }
+      else {
+        assert(false);
+      }
     }
 
     assert(!right.shape().empty());
@@ -498,7 +522,7 @@ static Array evaluateBinary(Array left, Array right, Function f)
     Values values;
 
     for (auto &x : left.values()) {
-      values.push_back(f(std::move(x), Array(right)));
+      values.push_back(evaluateBinary(std::move(x), Array(right), f));
     }
 
     return Array(left.shape(), std::move(values));
@@ -694,6 +718,9 @@ static Array evaluateNumberBinary(Fork<Array,T,Array> arg, const G &g)
     if (a.isNumber()) {
       if (b.isNumber()) {
         return g(a.asNumber(), b.asNumber());
+      }
+      else if (b.isBox()) {
+        assert(false);
       }
       else {
         assert(false);
@@ -2127,10 +2154,9 @@ int main()
     assert(result == _(1,0,1,0,0,0,0,1,0,0,1));
   }
 
-#if ADD_TEST
   {
     Array result = _(1,2,3, _.plus, _.enclose, 4,5,6);
-    assert(result == _(_(5,6,7),_(6,7,8), _(7,8,9)));
+    Array expected = _(_(5,6,7), _(6,7,8), _(7,8,9));
+    assert(result == expected);
   }
-#endif
 }
