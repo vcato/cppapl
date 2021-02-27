@@ -7,6 +7,9 @@
 #include <sstream>
 #include <algorithm>
 
+#define ADD_TEST 0
+
+
 using std::vector;
 using std::cerr;
 using std::ostream;
@@ -272,16 +275,15 @@ printNonScalarArrayOn(
   ostream &stream, const vector<int> &shape, const Values &values
 )
 {
-  if (shape.empty()) {
-    stream << values[0];
-  }
-  else if (shape.size() == 1) {
-    stream << values;
-  }
-  else if (shape.size() == 2) {
-    stream << "[";
+  assert(!shape.empty());
 
-    for (int i=0; i!=shape[0]; ++i) {
+  stream << "(";
+
+  for (int i=0; i!=shape[0]; ++i) {
+    if (shape.size() == 1) {
+      stream << " " << values[i];
+    }
+    else if (shape.size() == 2) {
       stream << " [";
 
       for (int j=0; j!=shape[1]; ++j) {
@@ -290,13 +292,13 @@ printNonScalarArrayOn(
 
       stream << " ]";
     }
+    else {
+      stream << "shape: " << shape << "\n";
+      assert(false);
+    }
+  }
 
-    stream << " ]";
-  }
-  else {
-    stream << "shape: " << shape << "\n";
-    assert(false);
-  }
+  stream << " )";
 }
 
 
@@ -404,6 +406,9 @@ struct Var {
 }
 
 
+using Vars = vector<Var>;
+
+
 namespace {
 template <typename T>
 struct Operator {
@@ -440,8 +445,11 @@ struct First;
 struct Each;
 struct Equal;
 struct Plus;
+struct Minus;
 struct Times;
 struct Divide;
+struct Power;
+struct Greater;
 struct Iota;
 struct Reduce;
 struct Product;
@@ -499,7 +507,7 @@ static Array evaluateBinary(Array left, Array right, Function f)
     Values values;
 
     for (auto &x : right.values()) {
-      values.push_back(f(Array(left), std::move(x)));
+      values.push_back(evaluateBinary(Array(left), std::move(x), f));
     }
 
     return Array(right.shape(), std::move(values));
@@ -868,6 +876,37 @@ static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
     return Array(std::move(shape), std::move(values));
   }
 
+  if (isVector(arg.right)) {
+    if (arg.right.shape()[0] == 2) {
+      Optional<int> maybe_n = maybeInteger(arg.right.values()[0]);
+      Optional<int> maybe_m = maybeInteger(arg.right.values()[1]);
+
+      if (!maybe_n) {
+        assert(false);
+      }
+
+      int n = *maybe_n;
+
+      if (!maybe_m) {
+        assert(false);
+      }
+
+      int m = *maybe_m;
+      Values values;
+
+      for (int i=0; i!=n; ++i) {
+        for (int j=0; j!=m; ++j) {
+          values.push_back(makeArrayFromValues({i+1, j+1}));
+        }
+      }
+
+      vector<int> shape = {n,m};
+      return Array(std::move(shape), std::move(values));
+    }
+
+    assert(false);
+  }
+
   cerr << "arg.right: " << arg.right << "\n";
   assert(false);
 }
@@ -961,6 +1000,13 @@ evaluate(Fork<Array, Function<Roll>, Array> arg, Context &context)
 }
 
 
+static Array evaluate(Fork<Array,Function<Greater>,Array> arg, Context &)
+{
+  auto f = [](Number a, Number b){ return a > b; };
+  return evaluateNumberBinary(arg, f);
+}
+
+
 template <typename A, typename B, typename C>
 static Atop<BoundOperator<A,B>,Function<C>>
 evaluate(Atop<BoundOperator<A,B>,Function<C>> arg, Context &)
@@ -987,6 +1033,16 @@ template <typename T>
 static Keyword<T> evaluate(Keyword<T> arg, Context &)
 {
   return arg;
+}
+
+
+static Array evaluate(Keyword<RightArg> /*arg*/, Context &context)
+{
+  if (!context.right_arg_ptr) {
+    assert(false);
+  }
+
+  return Array(*context.right_arg_ptr);
 }
 
 
@@ -1129,40 +1185,6 @@ evaluate(
 }
 
 
-static Array
-evaluate(Fork<Array, Function<Divide>, Array> arg, Context&)
-{
-  if (isScalar(arg.left)) {
-    if (!arg.left.isNumber()) {
-      assert(false);
-    }
-
-    if (isScalar(arg.right)) {
-      assert(false);
-    }
-
-    if (arg.right.shape().size() == 1) {
-      vector<int> shape = arg.right.shape();
-      Values values;
-
-      for (auto &x : arg.right.values()) {
-        if (!x.isNumber()) {
-          assert(false);
-        }
-
-        values.push_back(arg.left.asNumber() / x.asNumber());
-      }
-
-      return Array(std::move(shape), std::move(values));
-    }
-
-    cerr << "arg.right.shape(): " << arg.right.shape() << "\n";
-    assert(false);
-  }
-  assert(false);
-}
-
-
 static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
 {
   if (isScalar(arg.left)) {
@@ -1245,21 +1267,36 @@ static Array evaluate(Atop<Values,T> arg, Context &context)
 
 static Array evaluate(Fork<Array,Function<Plus>,Array> arg, Context &)
 {
-  return
-    evaluateNumberBinary(
-      std::move(arg),
-      [](Number a, Number b) { return a + b; }
-    );
+  auto f = [](Number a, Number b) { return a + b; };
+  return evaluateNumberBinary(std::move(arg), f);
+}
+
+
+static Array evaluate(Fork<Array,Function<Minus>,Array> arg, Context &)
+{
+  auto f = [](Number a, Number b) { return a - b; };
+  return evaluateNumberBinary(std::move(arg), f);
 }
 
 
 static Array evaluate(Fork<Array,Function<Times>,Array> arg, Context &)
 {
-  return
-    evaluateNumberBinary(
-      std::move(arg),
-      [](Number a, Number b) { return a * b; }
-    );
+  auto f = [](Number a, Number b) { return a * b; };
+  return evaluateNumberBinary(std::move(arg), f);
+}
+
+
+static Array evaluate(Fork<Array, Function<Divide>, Array> arg, Context&)
+{
+  auto f = [](Number a, Number b) { return a / b; };
+  return evaluateNumberBinary(arg, f);
+}
+
+
+static Array evaluate(Fork<Array, Function<Power>, Array> arg, Context&)
+{
+  auto f = [](Number a, Number b) { return std::pow(a,b); };
+  return evaluateNumberBinary(arg, f);
 }
 
 
@@ -1517,6 +1554,16 @@ static Array combine(Context &, Number arg)
 }
 
 
+static Array combine(Context &context, Keyword<RightArg>)
+{
+  if (!context.right_arg_ptr) {
+    assert(false);
+  }
+
+  return Array(*context.right_arg_ptr);
+}
+
+
 template <typename T>
 static T combine(Context &, T arg)
 {
@@ -1546,11 +1593,28 @@ join(Operator<T> left, Array right, Context &)
 }
 
 
+#if ADD_TEST
+template <typename T, typename U>
+static Partial<Operator<T>,Array>
+join(Operator<T> /*left*/, Fork<Values, Function<U>, Array> /*right*/, Context &)
+{
+  assert(false);
+  //return { std::move(left), std::move(right) };
+}
+#endif
+
+
 template <typename T>
 static auto join(T left, Var right, Context &context)
 {
   assert(right.ptr);
   return join(std::move(left), Array(*right.ptr), context);
+}
+
+
+static Vars join(Var left, Var right, Context &)
+{
+  return { std::move(left), std::move(right) };
 }
 
 
@@ -1782,6 +1846,53 @@ join(Array left, Atop<Values, Index<Array>> right, Context&)
 }
 
 
+static Array makeArrayFromVars(Vars vars)
+{
+  Values values;
+
+  for (auto &var : vars) {
+    values.push_back(Array(*var.ptr));
+  }
+
+  return makeArrayFromValues(std::move(values));
+}
+
+
+template <typename T>
+static auto join(Function<T> left, Vars right, Context &context)
+{
+  return join(std::move(left), makeArrayFromVars(std::move(right)), context);
+}
+
+
+#if ADD_TEST
+template <typename T, typename U, typename V>
+auto
+join(
+  Function<T> left,
+  Atop<BoundOperator<U, V>, Array> right,
+  Context &context
+)
+{
+  return join(left, evaluate(std::move(right), context), context);
+}
+#endif
+
+
+#if ADD_TEST
+template <typename T>
+static void
+join(
+  Dfn<Expr<T>>,
+  Partial<Operator<Each>, Array>,
+  Context&
+)
+{
+  assert(false);
+}
+#endif
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
@@ -1833,28 +1944,6 @@ template <typename T>
 static auto evaluate(Dfn<T> arg, Context&)
 {
   return arg;
-}
-
-
-static auto
-evaluate(
-  Fork<Keyword<RightArg>, Function<MemberOf>, Array> arg,
-  Context &context
-)
-{
-  if (!context.right_arg_ptr) {
-    assert(false);
-  }
-
-  return
-    evaluate(
-      Fork<Array, Function<MemberOf>, Array>{
-        Array(*context.right_arg_ptr),
-        std::move(arg.mid),
-        std::move(arg.right)
-      },
-      context
-    );
 }
 
 
@@ -1961,8 +2050,11 @@ struct Placeholder {
   static constexpr Function<First>     first = {};
   static constexpr Function<Equal>     equal = {};
   static constexpr Function<Plus>      plus = {};
+  static constexpr Function<Minus>     minus = {};
   static constexpr Function<Times>     times = {};
   static constexpr Function<Divide>    divide = {};
+  static constexpr Function<Power>     power = {};
+  static constexpr Function<Greater>   greater = {};
   static constexpr Function<Iota>      iota = {};
   static constexpr Function<Roll>      roll = {};
   static constexpr Function<Replicate> replicate = {};
@@ -2001,8 +2093,11 @@ constexpr Function<Reshape>   Placeholder::reshape;
 constexpr Function<First>     Placeholder::first;
 constexpr Function<Equal>     Placeholder::equal;
 constexpr Function<Plus>      Placeholder::plus;
+constexpr Function<Minus>     Placeholder::minus;
 constexpr Function<Times>     Placeholder::times;
 constexpr Function<Divide>    Placeholder::divide;
+constexpr Function<Power>     Placeholder::power;
+constexpr Function<Greater>   Placeholder::greater;
 constexpr Function<Iota>      Placeholder::iota;
 constexpr Function<Roll>      Placeholder::roll;
 constexpr Function<Replicate> Placeholder::replicate;
@@ -2057,6 +2152,7 @@ static void runSimpleTests()
   assert(shapeOf(_(_.shape,1,2,3)) == vector<int>{1});
   assert(_(1,2,3, _.equal, 1,2,3) == _(1,1,1));
   assert(_(2, _.plus, 2) == _(4));
+  assert(_(4, _.minus, 1) == _(3));
   assert(_(_.shape, "hello") == _(5));
   assert(_(_.iota, 3) == _(1,2,3));
   assert(_(_.plus, _.reduce, _.iota, 3) == _(6));
@@ -2074,7 +2170,7 @@ static void runSimpleTests()
   assert(_(2, _.drop, _.iota, 5) == (_(3,4,5)));
   assert(_(2, _.drop, 4, 5) == _(_.empty));
   assert(_(3, _.drop, 4, 5) == _(_.empty));
-  assert(str(_(2,2, _.reshape, 1,2,3,4)) == "[ [ 1 2 ] [ 3 4 ] ]");
+  assert(str(_(2,2, _.reshape, 1,2,3,4)) == "( [ 1 2 ] [ 3 4 ] )");
   assert(_(1,0,2, _.replicate, 1,2,3) == _(1,3,3));
   assert(_(1, _.member_of, 1) == _(1));
   assert(_(1, _.member_of, 1,2,3) == _(1));
@@ -2084,6 +2180,9 @@ static void runSimpleTests()
   assert(_(_.first, _.enclose, 1,2) == _(1,2));
   assert(_(5,3,9, _.index(3)) == 9);
   assert(_(_.grade_up, 5,3,9) == _(2,1,3));
+  assert(_(2, _.greater, 1)== _(1));
+  assert(_(2, _.power, 3) == _(8));
+  assert(_(_.dfn(1, _.plus, _.right_arg), 2) == _(3));
 }
 
 
@@ -2174,7 +2273,36 @@ static void testExamples()
     Array result = _(_(5,6), _.index(2,2,_.reshape,1,2,2,1));
     assert(result == _(2,2, _.reshape, 5,6,6,5));
   }
+
+  {
+    Array W = 3;
+    Array H = 2;
+    Array grid = _(-1, _.plus, _.iota, H, W);
+    assert(grid.shape().size() == 2);
+
+    std::string expected =
+      "( [ ( 0 0 ) ( 0 1 ) ( 0 2 ) ]"
+       " [ ( 1 0 ) ( 1 1 ) ( 1 2 ) ] )";
+
+    assert(str(grid) == expected);
+  }
 }
+
+
+#if ADD_TEST
+static void testCircle()
+{
+  Placeholder _;
+  Array W = 20;
+  Array H = 10;
+  Array grid = _(-1, _.plus, _.iota, H, W);
+
+  Array result =
+    _(_(' ','*'), _.index(_(_.dfn(.1, _.greater, _.plus, _.reduce, _(-.5, _.plus, _.right_arg, _.divide, H, W, _.minus, 1), _.power, 2), _.each, grid), _.plus, 1));
+
+  cerr << "result: " << result << "\n";
+}
+#endif
 
 
 int main()
@@ -2182,4 +2310,7 @@ int main()
   runSimpleTests();
   testAssignment();
   testExamples();
+#if ADD_TEST
+  testCircle();
+#endif
 }
