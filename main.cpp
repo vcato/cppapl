@@ -42,16 +42,10 @@ static void createObject(T& number, U&& arg)
 
 
 namespace {
-struct Array;
-using Values = vector<Array>;
-struct Boxed;
-}
-
-
-namespace {
 class Array {
 public:
   enum class Type { number, character, values , box };
+  struct Boxed { Array &&array; };
 
 public:
   Array(Number arg)
@@ -76,7 +70,11 @@ public:
     assert(!this->shape().empty());
   }
 
-  Array(Boxed arg);
+  Array(Boxed arg)
+  : _type(Type::box),
+    box{{}, {std::move(arg.array)}}
+  {
+  }
 
   explicit Array(const Array &arg)
   : _type(arg._type)
@@ -117,13 +115,13 @@ public:
     assert(false);
   }
 
-  Values &values() &
+  vector<Array> &values() &
   {
     assert(isNonScalar());
     return box.values;
   }
 
-  const Values &values() const &
+  const vector<Array> &values() const &
   {
     assert(isNonScalar());
     return box.values;
@@ -255,25 +253,14 @@ private:
 }
 
 
+using Values = vector<Array>;
+
+
 namespace {
 static bool operator==(const Array &a, const Array &b)
 {
   return Array::areEqual(a,b);
 }
-}
-
-
-namespace {
-struct Boxed {
-  Array array;
-};
-}
-
-
-Array::Array(Boxed arg)
-: _type(Type::box),
-  box{{}, {std::move(arg.array)}}
-{
 }
 
 
@@ -1440,7 +1427,7 @@ static Array evaluate(Atop<Function<Enclose>,Array> arg, Context &)
     return std::move(arg.right);
   }
 
-  return Boxed{std::move(arg.right)};
+  return Array::Boxed{std::move(arg.right)};
 }
 
 
