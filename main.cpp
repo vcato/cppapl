@@ -2043,7 +2043,7 @@ Expr<F>::operator Array() &&
 }
 
 
-int main()
+static void runSimpleTests()
 {
   Placeholder _;
   assert(_(1) == _(1));
@@ -2075,24 +2075,27 @@ int main()
   assert(_(2, _.drop, 4, 5) == _(_.empty));
   assert(_(3, _.drop, 4, 5) == _(_.empty));
   assert(str(_(2,2, _.reshape, 1,2,3,4)) == "[ [ 1 2 ] [ 3 4 ] ]");
-
-  assert(
-    _(_(_.iota, 2), _.outer, _.product, _.times, _.iota, 2) ==
-    _(2,2, _.reshape, 1, 2, 2, 4)
-  );
-
   assert(_(1,0,2, _.replicate, 1,2,3) == _(1,3,3));
+  assert(_(1, _.member_of, 1) == _(1));
+  assert(_(1, _.member_of, 1,2,3) == _(1));
+  assert(_(1,2,3, _.member_of, 2) == _(0,1,0));
+  assert(_(_.isnot, 1) == _(0));
+  assert(_(_.shape, _.shape, _.enclose, 1, 2) == _(0));
+  assert(_(_.first, _.enclose, 1,2) == _(1,2));
+  assert(_(5,3,9, _.index(3)) == 9);
+  assert(_(_.grade_up, 5,3,9) == _(2,1,3));
+}
+
+
+static void testAssignment()
+{
+  Placeholder _;
 
   {
     Array R = 5;
     _(R, _.assign, 1, _.drop, _.iota, 5);
     assert(R == _(2,3,4,5));
   }
-
-  assert(_(1, _.member_of, 1) == _(1));
-  assert(_(1, _.member_of, 1,2,3) == _(1));
-  assert(_(1,2,3, _.member_of, 2) == _(0,1,0));
-  assert(_(_.isnot, 1) == _(0));
 
   {
     Array R = 3;
@@ -2118,6 +2121,17 @@ int main()
     Array R = 5;
     assert(_(R, _.assign, 1, _.drop, _.iota, R) == _(2,3,4,5));
   }
+}
+
+
+static void testExamples()
+{
+  Placeholder _;
+
+  {
+    Array result = _(_(_.iota, 2), _.outer, _.product, _.times, _.iota, 2);
+    assert(result == _(2,2, _.reshape, 1, 2, 2, 4));
+  }
 
   {
     Array R = 5;
@@ -2130,9 +2144,6 @@ int main()
     );
   }
 
-  assert(_(_.shape, _.shape, _.enclose, 1, 2) == _(0));
-  assert(_(_.first, _.enclose, 1,2) == _(1,2));
-
   {
     Array X = _(1,2);
 
@@ -2140,9 +2151,6 @@ int main()
       _(_(_.plus, _.reduce, X), _.divide, _.shape, X) == _(1, _.reshape, 1.5)
     );
   }
-
-  assert(_(5,3,9, _.index(3)) == 9);
-  assert(_(_.grade_up, 5,3,9) == _(2,1,3));
 
   {
     Array X(0);
@@ -2166,4 +2174,12 @@ int main()
     Array result = _(_(5,6), _.index(2,2,_.reshape,1,2,2,1));
     assert(result == _(2,2, _.reshape, 5,6,6,5));
   }
+}
+
+
+int main()
+{
+  runSimpleTests();
+  testAssignment();
+  testExamples();
 }
