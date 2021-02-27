@@ -18,6 +18,8 @@ class Array {
 public:
   enum class Type { number, character, values , box };
   struct Boxed { Array &&array; };
+  using Shape = vector<int>;
+  using Values = vector<Array>;
 
 public:
   Array(Number arg)
@@ -35,7 +37,7 @@ public:
   {
   }
 
-  Array(std::vector<int> shape, std::vector<Array> values)
+  Array(Shape shape, Values values)
   : _type(Type::values),
     box{std::move(shape), std::move(values)}
   {
@@ -64,7 +66,7 @@ public:
 
   Type type() const { return _type; }
 
-  const vector<int> &shape() const
+  const Shape &shape() const
   {
     assert(isNonScalar());
     return box.shape;
@@ -87,13 +89,13 @@ public:
     assert(false);
   }
 
-  vector<Array> &values() &
+  Values &values() &
   {
     assert(isNonScalar());
     return box.values;
   }
 
-  const vector<Array> &values() const &
+  const Values &values() const &
   {
     assert(isNonScalar());
     return box.values;
@@ -170,8 +172,8 @@ public:
 
 private:
   struct Box {
-    vector<int> shape;
-    vector<Array> values;
+    Shape shape;
+    Values values;
 
     friend bool operator==(const Box &a, const Box &b)
     {
@@ -241,7 +243,7 @@ static ostream& operator<<(ostream& stream, const Array &a);
 
 static void
 printNonScalarArrayOn(
-  ostream &stream, const vector<int> &shape, const Values &values
+  ostream &stream, const Array::Shape &shape, const Array::Values &values
 )
 {
   assert(!shape.empty());
@@ -271,7 +273,7 @@ printNonScalarArrayOn(
 }
 
 
-static const vector<int> &shapeOf(const Array &a)
+static const Array::Shape &shapeOf(const Array &a)
 {
   return a.shape();
 }
@@ -302,7 +304,7 @@ static ostream& operator<<(ostream& stream, const Array &v)
 static Array makeArrayFromString(const char *arg)
 {
   int n = strlen(arg);
-  vector<int> shape = vector<int>{ n };
+  Array::Shape shape = { n };
   Values values;
 
   for (int i=0; i!=n; ++i) {
@@ -481,7 +483,7 @@ static Array evaluateBinary(Array left, Array right, Function f)
 
   if (left.values().size() == 1) {
     if (right.values().size() == 1) {
-      vector<int> shape = {1};
+      Array::Shape shape = {1};
       Values values;
 
       values.push_back(
@@ -494,7 +496,7 @@ static Array evaluateBinary(Array left, Array right, Function f)
   }
 
   if (left.shape() == right.shape()) {
-    vector<int> shape = left.shape();
+    Array::Shape shape = left.shape();
     Values values;
     size_t n = left.values().size();
     auto in1 = left.values().begin();
@@ -557,7 +559,7 @@ static Optional<int> maybeInteger(const Array &a)
 }
 
 
-static int product(const vector<int> &arg)
+static int product(const Array::Shape &arg)
 {
   return std::accumulate(arg.begin(), arg.end(), 1, std::multiplies<>());
 }
@@ -732,7 +734,7 @@ static Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
     return Array({0},{});
   }
 
-  const vector<int> &shape = arg.right.shape();
+  const Array::Shape &shape = arg.right.shape();
 
   for (int x : shape) {
     values.push_back(Number(x));
@@ -753,7 +755,7 @@ static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
 
     int n = *maybe_n;
     assert(n >= 0);
-    vector<int> shape = {n};
+    Array::Shape shape = {n};
 
     Values values;
 
@@ -788,7 +790,7 @@ static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
         }
       }
 
-      vector<int> shape = {n,m};
+      Array::Shape shape = {n,m};
       return Array(std::move(shape), std::move(values));
     }
 
@@ -964,7 +966,7 @@ evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
         return Array({0}, {});
       }
 
-      vector<int> shape = {arg.right.shape()[0] - n_to_drop};
+      Array::Shape shape = {arg.right.shape()[0] - n_to_drop};
       auto iter = arg.right.values().begin();
       iter += n_to_drop;
       Values values;
@@ -993,13 +995,13 @@ static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
         values.push_back(arg.right);
       }
 
-      vector<int> shape = {n};
+      Array::Shape shape = {n};
       return Array(std::move(shape), std::move(values));
     }
     assert(false);
   }
 
-  vector<int> shape;
+  Array::Shape shape;
 
   for (Array &x : arg.left.values()) {
     Optional<int> maybe_int_x = maybeInteger(x);
@@ -1046,7 +1048,7 @@ evaluate(
 
   int n_cols = arg.right.shape()[0];
 
-  vector<int> shape = { n_rows, n_cols };
+  Array::Shape shape = { n_rows, n_cols };
   Values values;
 
   for (auto &x : arg.left.values()) {
@@ -1271,7 +1273,7 @@ static Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
       assert(false);
     }
 
-    vector<int> shape = {n};
+    Array::Shape shape = {n};
     Values values;
 
     for (int i=0; i!=n; ++i) {
@@ -1359,7 +1361,7 @@ static Array evaluate(Atop<Function<Enclose>,Array> arg, Context &)
 static Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
 {
   if (isVector(arg.right)) {
-    vector<int> indices;
+    Array::Shape indices;
     int n = arg.right.shape()[0];
 
     for (int i=0; i!=n; ++i) {
@@ -2033,11 +2035,11 @@ static void runSimpleTests()
   assert(!(_(2) == _(3)));
   assert(_(1,2) == _(1,2));
   assert(_(1,2,3) == _(1,2,3));
-  assert(shapeOf(_(1,2,3)) == vector<int>{3});
+  assert(shapeOf(_(1,2,3)) == Array::Shape{3});
   assert(_(_.shape, 1,2,3) == _(3));
   assert(_(3, _.equal, 3) == _(1));
   assert(_(3, _.equal, _.shape, 1,2,3) == _(1));
-  assert(shapeOf(_(_.shape,1,2,3)) == vector<int>{1});
+  assert(shapeOf(_(_.shape,1,2,3)) == Array::Shape{1});
   assert(_(1,2,3, _.equal, 1,2,3) == _(1,1,1));
   assert(_(2, _.plus, 2) == _(4));
   assert(_(4, _.minus, 1) == _(3));
