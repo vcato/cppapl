@@ -330,14 +330,7 @@ static ostream& operator<<(ostream& stream, const Array &v)
 }
 
 
-namespace {
-template <typename Function, typename Operator>
-struct BoundOperator {
-};
-}
-
-
-static Array makeCharArray(const char *arg)
+static Array makeArrayFromString(const char *arg)
 {
   int n = strlen(arg);
   vector<int> shape = vector<int>{ n };
@@ -357,7 +350,10 @@ template <typename T> struct Keyword { };
 template <typename T> struct Function { };
 template <typename T> struct Dfn { T expr; };
 template <typename T> struct Index { T arg; };
+template <typename T> struct Operator { };
+template <typename Function, typename Operator> struct BoundOperator { };
 }
+
 
 
 namespace {
@@ -400,20 +396,11 @@ struct Expr {
 
 
 namespace {
-struct Var {
-  Array *const ptr;
-};
+struct Var { Array *const ptr; };
 }
 
 
 using Vars = vector<Var>;
-
-
-namespace {
-template <typename T>
-struct Operator {
-};
-}
 
 
 template <typename Left, typename Right>
@@ -1537,7 +1524,7 @@ template <size_t n>
 struct MakeRValue<const char (&)[n]> {
   Array operator()(const char *arg) const
   {
-    return makeCharArray(arg);
+    return makeArrayFromString(arg);
   }
 };
 
