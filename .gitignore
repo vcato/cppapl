@@ -1,1 +1,6 @@
 main
+*.d
+*.o
+*.pass
+*_test
+.*.swp
