@@ -1,15 +1,14 @@
 #include <cstring>
 #include <iostream>
-#include <vector>
 #include <random>
 #include <sstream>
 #include <algorithm>
 #include "optional.hpp"
+#include "vector.hpp"
 
 #define ADD_TEST 0
 
 
-using std::vector;
 using std::cerr;
 using std::ostream;
 using Number = double;
