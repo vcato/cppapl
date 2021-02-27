@@ -1,10 +1,9 @@
 #include <cstring>
-#include <iostream>
 #include <random>
 #include <sstream>
 #include <algorithm>
 #include "optional.hpp"
-#include "vector.hpp"
+#include "vectorio.hpp"
 
 #define ADD_TEST 0
 
@@ -12,20 +11,6 @@
 using std::cerr;
 using std::ostream;
 using Number = double;
-
-
-template <typename T>
-static ostream& operator<<(ostream& s, const vector<T> &v)
-{
-  s << "[";
-
-  for (const auto &x : v) {
-    s << " " << x;
-  }
-
-  s << " ]";
-  return s;
-}
 
 
 namespace {
