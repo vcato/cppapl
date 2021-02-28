@@ -7,7 +7,6 @@
 
 #define ADD_TEST 0
 
-
 using std::cerr;
 using std::ostream;
 using Number = double;
@@ -319,10 +318,15 @@ static Array makeArrayFromString(const char *arg)
 namespace {
 template <typename T> struct Keyword { };
 template <typename T> struct Function { };
-template <typename T> struct Dfn { T expr; };
+template <typename T> struct Dfn { T f; };
 template <typename T> struct Index { T arg; };
 template <typename T> struct Operator { };
-template <typename Function, typename Operator> struct BoundOperator { };
+
+template <typename Function, typename Operator>
+struct BoundOperator {
+  Function left;
+};
+
 }
 
 
@@ -1190,7 +1194,8 @@ static Array evaluate(Fork<Array, Function<Power>, Array> arg, Context&)
 }
 
 
-static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg, Context &)
+static Array
+evaluate(Atop<BoundOperator<Function<Plus>,Reduce>,Array> arg, Context &)
 {
   const Array &right = arg.right;
 
@@ -1212,7 +1217,38 @@ static Array evaluate(Atop<BoundOperator<Plus,Reduce>,Array> arg, Context &)
 }
 
 
-static Array evaluate(Atop<BoundOperator<First,Each>,Array> arg, Context &)
+#if ADD_TEST
+template <typename T>
+static Array
+evaluate(
+  Atop<BoundOperator<Dfn<T> , Each>, Array> arg,
+  Context& context
+)
+{
+  if (isScalar(arg.right)) {
+    assert(false);
+  }
+  else if (arg.right.shape().size() == 1) {
+    assert(false);
+  }
+  else {
+    Values values;
+
+    for (auto &x : arg.right.values()) {
+      //values.push_back(evaluate(arg.left.left, std::move(x), context));
+    }
+
+    //evaluate(arg.left.left, x);
+    assert(false);
+  }
+
+  assert(false);
+}
+#endif
+
+
+static Array
+evaluate(Atop<BoundOperator<Function<First>,Each>,Array> arg, Context &)
 {
   if (arg.right.shape().empty()) {
     assert(false);
@@ -1631,7 +1667,7 @@ join(Operator<T>, Function<U>, Context &)
 }
 
 
-static Atop<BoundOperator<Plus,Reduce>,Function<Iota>>
+static Atop<BoundOperator<Function<Plus>,Reduce>,Function<Iota>>
 join(Function<Plus>, Partial<Operator<Reduce>, Function<Iota>>, Context &)
 {
   return {};
@@ -1639,7 +1675,7 @@ join(Function<Plus>, Partial<Operator<Reduce>, Function<Iota>>, Context &)
 
 
 template <typename T>
-static Atop<BoundOperator<Plus,T>,Array>
+static Atop<BoundOperator<Function<Plus>,T>,Array>
 join(Function<Plus> /*left*/, Partial<Operator<T>,Array> right, Context &)
 {
   return { {}, std::move(right.right) };
@@ -1647,7 +1683,7 @@ join(Function<Plus> /*left*/, Partial<Operator<T>,Array> right, Context &)
 
 
 template <typename T>
-static Atop<BoundOperator<First,T>,Array>
+static Atop<BoundOperator<Function<First>,T>,Array>
 join(Function<First> /*left*/, Partial<Operator<T>,Array> right, Context &)
 {
   return {{},std::move(right.right)};
@@ -1705,8 +1741,8 @@ static auto join(Var left, T right, Context &context)
 
 
 template <typename T>
-static Atop<Dfn<Expr<T>>,Array>
-join(Dfn<Expr<T>> left, Array right, Context&)
+static Atop<Dfn<T>,Array>
+join(Dfn<T> left, Array right, Context&)
 {
   return {std::move(left), std::move(right)};
 }
@@ -1771,14 +1807,17 @@ join(
 
 #if ADD_TEST
 template <typename T>
-static void
+static Atop< BoundOperator<Dfn<T>,Each> , Array >
 join(
-  Dfn<Expr<T>>,
-  Partial<Operator<Each>, Array>,
+  Dfn<T> left,
+  Partial<Operator<Each>, Array> right,
   Context&
 )
 {
-  assert(false);
+  return {
+    { std::move(left) },
+    std::move(right.right)
+  };
 }
 #endif
 
@@ -1819,14 +1858,21 @@ static auto evaluateExprInContext(const F &f, Context &context)
 }
 
 
+#if 0
+static Array evaluateDfn()
+{
+}
+#endif
+
+
 template <typename T>
 static Array evaluate(Atop<Dfn<T>,Array> arg, Context &context)
 {
+  //return evaluateDfn(arg.left, arg.right, context);
+  Dfn<T> &dfn = arg.left;
   Context c{context.random_engine};
   c.right_arg_ptr = &arg.right;
-  auto result = evaluateExprInContext(arg.left.expr.f, c);
-  arg.left.expr.evaluated = true;
-  return result;
+  return evaluateExprInContext(dfn.f, c);
 }
 
 
@@ -1896,9 +1942,9 @@ static auto join(T left, Expr<F> right, Context &context)
 }
 
 
-static Atop<BoundOperator<Plus,Reduce>,Array>
+static Atop<BoundOperator<Function<Plus>,Reduce>,Array>
 join(
-  Atop<BoundOperator<Plus, Reduce>, Function<Iota> > left,
+  Atop<BoundOperator<Function<Plus>, Reduce>, Function<Iota> > left,
   Array right,
   Context &context
 )
@@ -1917,10 +1963,17 @@ join(
 
 
 template <typename ...Args>
+static auto defer(Args &&...args)
+{
+  return [&](auto f){ return f(std::forward<decltype(args)>(args)...); };
+}
+
+
+template <typename ...Args>
 static auto makeExpr(Context &context, Args &&...args)
 {
-  auto lambda = [&](auto f){ return f(std::forward<decltype(args)>(args)...); };
-  return Expr<decltype(lambda)>{context, lambda};
+  auto f = defer(std::forward<Args>(args)...);
+  return Expr<decltype(f)>{context, std::move(f)};
 }
 
 
@@ -1964,8 +2017,8 @@ struct Placeholder {
   template <typename ...Args>
   constexpr auto dfn(Args &&...args)
   {
-    auto x = makeExpr(context, std::forward<decltype(args)>(args)...);
-    return Dfn<decltype(x)>{std::move(x)};
+    auto f = defer(std::forward<Args>(args)...);
+    return Dfn<decltype(f)>{std::move(f)};
   }
 
   template <typename ...Args>
