@@ -1235,10 +1235,9 @@ evaluate(
     Values values;
 
     for (auto &x : arg.right.values()) {
-      //values.push_back(evaluate(arg.left.left, std::move(x), context));
+      values.push_back(evaluateDfn(arg.left.left, std::move(x), context));
     }
 
-    //evaluate(arg.left.left, x);
     assert(false);
   }
 
@@ -1858,21 +1857,19 @@ static auto evaluateExprInContext(const F &f, Context &context)
 }
 
 
-#if 0
-static Array evaluateDfn()
+template <typename T>
+static Array evaluateDfn(const Dfn<T> &dfn, Array arg, Context &context)
 {
+  Context c{context.random_engine};
+  c.right_arg_ptr = &arg;
+  return evaluateExprInContext(dfn.f, c);
 }
-#endif
 
 
 template <typename T>
 static Array evaluate(Atop<Dfn<T>,Array> arg, Context &context)
 {
-  //return evaluateDfn(arg.left, arg.right, context);
-  Dfn<T> &dfn = arg.left;
-  Context c{context.random_engine};
-  c.right_arg_ptr = &arg.right;
-  return evaluateExprInContext(dfn.f, c);
+  return evaluateDfn(arg.left, std::move(arg.right), context);
 }
 
 
@@ -2240,9 +2237,17 @@ static void testCircle()
   Array H = 10;
   Array grid = _(-1, _.plus, _.iota, H, W);
 
-  Array result =
-    _(_(' ','*'), _.index(_(_.dfn(.1, _.greater, _.plus, _.reduce, _(-.5, _.plus, _.right_arg, _.divide, H, W, _.minus, 1), _.power, 2), _.each, grid), _.plus, 1));
+  Array flags =
+    _(
+      _.dfn(
+        .1, _.greater, _.plus, _.reduce,
+        _(-.5, _.plus, _.right_arg, _.divide, H, W, _.minus, 1),
+        _.power, 2
+      ),
+      _.each, grid
+    );
 
+  Array result = _(_(' ','*'), _.index(flags, _.plus, 1));
   cerr << "result: " << result << "\n";
 }
 #endif
