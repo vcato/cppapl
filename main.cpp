@@ -5,8 +5,6 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
-#define ADD_TEST 0
-
 using std::cerr;
 using std::ostream;
 using Number = double;
@@ -85,7 +83,8 @@ public:
 
   char asCharacter() const
   {
-    assert(false);
+    assert(_type == Type::character);
+    return character;
   }
 
   Values &values() &
@@ -240,6 +239,42 @@ static bool operator==(const Array &a, const Array &b)
 static ostream& operator<<(ostream& stream, const Array &a);
 
 
+static bool isAllCharacters(const Values &v, int start, int n)
+{
+  for (auto it = v.begin() + start; it != v.begin() + start + n; ++it) {
+    const Array &a = *it;
+
+    if (!a.isCharacter()) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+
+static void
+printSpanOn(ostream &stream, const Values &v, int start, int n)
+{
+  if (isAllCharacters(v, start, n)) {
+    stream << " \"";
+    for (int i=start; i!=start+n; ++i) {
+      stream << v[i].asCharacter();
+    }
+    stream << "\"";
+  }
+  else {
+    stream << " [";
+
+    for (int i=start; i!=start+n; ++i) {
+      stream << " " << v[i];
+    }
+
+    stream << " ]";
+  }
+}
+
+
 static void
 printNonScalarArrayOn(
   ostream &stream, const Array::Shape &shape, const Array::Values &values
@@ -254,13 +289,7 @@ printNonScalarArrayOn(
       stream << " " << values[i];
     }
     else if (shape.size() == 2) {
-      stream << " [";
-
-      for (int j=0; j!=shape[1]; ++j) {
-        stream << " " << values[i*shape[1] + j];
-      }
-
-      stream << " ]";
+      printSpanOn(stream, values, i*shape[1], shape[1]);
     }
     else {
       stream << "shape: " << shape << "\n";
@@ -1217,7 +1246,6 @@ evaluate(Atop<BoundOperator<Function<Plus>,Reduce>,Array> arg, Context &)
 }
 
 
-#if ADD_TEST
 template <typename T>
 static Array
 evaluate(
@@ -1238,12 +1266,11 @@ evaluate(
       values.push_back(evaluateDfn(arg.left.left, std::move(x), context));
     }
 
-    assert(false);
+    return Array(std::move(arg).right.shape(), std::move(values));
   }
 
   assert(false);
 }
-#endif
 
 
 static Array
@@ -1518,15 +1545,12 @@ join(Operator<T> left, Array right, Context &)
 }
 
 
-#if ADD_TEST
 template <typename T, typename U>
 static Partial<Operator<T>,Array>
-join(Operator<T> /*left*/, Fork<Values, Function<U>, Array> /*right*/, Context &)
+join(Operator<T> left, Fork<Values, Function<U>, Array> right, Context &context)
 {
-  assert(false);
-  //return { std::move(left), std::move(right) };
+  return { std::move(left), evaluate(std::move(right), context) };
 }
-#endif
 
 
 template <typename T>
@@ -1790,7 +1814,6 @@ static auto join(Function<T> left, Vars right, Context &context)
 }
 
 
-#if ADD_TEST
 template <typename T, typename U, typename V>
 auto
 join(
@@ -1801,10 +1824,8 @@ join(
 {
   return join(left, evaluate(std::move(right), context), context);
 }
-#endif
 
 
-#if ADD_TEST
 template <typename T>
 static Atop< BoundOperator<Dfn<T>,Each> , Array >
 join(
@@ -1813,12 +1834,8 @@ join(
   Context&
 )
 {
-  return {
-    { std::move(left) },
-    std::move(right.right)
-  };
+  return { { std::move(left) }, std::move(right.right) };
 }
-#endif
 
 
 template <typename Arg1, typename Arg2, typename ...Args>
@@ -2229,7 +2246,6 @@ static void testExamples()
 }
 
 
-#if ADD_TEST
 static void testCircle()
 {
   Placeholder _;
@@ -2248,9 +2264,30 @@ static void testCircle()
     );
 
   Array result = _(_(' ','*'), _.index(flags, _.plus, 1));
-  cerr << "result: " << result << "\n";
+  std::string s;
+
+  for (int i=0; i!=result.shape()[0]; ++i) {
+    for (int j=0; j!=result.shape()[1]; ++j) {
+      s += result.values()[i*result.shape()[1] + j].asCharacter();
+    }
+
+    s += '\n';
+  }
+
+  std::string expected =
+    "                    \n"
+    "                    \n"
+    "       ******       \n"
+    "     **********     \n"
+    "    ************    \n"
+    "    ************    \n"
+    "     **********     \n"
+    "       ******       \n"
+    "                    \n"
+    "                    \n";
+
+  assert(s == expected);
 }
-#endif
 
 
 int main()
@@ -2258,7 +2295,5 @@ int main()
   runSimpleTests();
   testAssignment();
   testExamples();
-#if ADD_TEST
   testCircle();
-#endif
 }
