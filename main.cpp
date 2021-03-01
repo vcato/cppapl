@@ -1833,11 +1833,8 @@ static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
-  return
-    evaluate(
-      combine(context, MakeRValue<Args>()(std::forward<Args>(args))...),
-      context
-    );
+  auto x = combine(context, MakeRValue<Args>()(std::forward<Args>(args))...);
+  return evaluate(std::move(x), context);
 }
 
 
@@ -1926,9 +1923,11 @@ Expr<F>::~Expr()
 
 
 template <typename F>
-static auto evaluate(Expr<F> expr, Context &)
+static auto evaluate(Expr<F> expr, Context &context)
 {
-  return evaluateExpr(std::move(expr));
+  auto result = evaluateExprInContext(expr.f, context);
+  expr.evaluated = true;
+  return result;
 }
 
 
@@ -2123,6 +2122,7 @@ static void runSimpleTests()
   assert(_(2, _.greater, 1)== _(1));
   assert(_(2, _.power, 3) == _(8));
   assert(_(_.dfn(1, _.plus, _.right_arg), 2) == _(3));
+  assert(_(_.dfn(_(_.right_arg)), 5) == _(5));
 }
 
 
