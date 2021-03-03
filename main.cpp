@@ -5,6 +5,8 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
+#define ADD_TEST 0
+
 using std::cerr;
 using std::ostream;
 using Number = double;
@@ -445,6 +447,7 @@ struct Iota;
 struct Reduce;
 struct Product;
 struct Outer;
+struct Beside;
 struct Roll;
 struct Replicate;
 struct Enclose;
@@ -467,6 +470,38 @@ static bool isScalar(const Array &a)
   else {
     return true;
   }
+}
+
+
+template <typename A, typename B>
+static Atop<A,B> atop(A a, B b)
+{
+  return { std::move(a), std::move(b) };
+}
+
+
+template <typename A, typename B, typename C>
+static Fork<A,B,C> fork(A a, B b, C c)
+{
+  return { std::move(a), std::move(b), std::move(c) };
+}
+
+
+template <typename Function>
+static Array evaluateUnary(Array a, Function f)
+{
+  if (isScalar(a)) {
+    return f(a);
+  }
+
+  size_t n = a.values().size();
+  Values values;
+
+  for (size_t i=0; i!=n; ++i) {
+    values.push_back(f(a.values()[i]));
+  }
+
+  return Array(a.shape(), std::move(values));
 }
 
 
@@ -774,6 +809,21 @@ static Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
   }
 
   return Array({ int(shape.size()) }, std::move(values));
+}
+
+
+static Array evaluate(Atop<Function<Divide>,Array> arg, Context &)
+{
+  auto f = [](const Array &a){
+    if (!a.isNumber()) {
+      assert(false);
+      return Array(0);
+    }
+
+    return Array(1/a.asNumber());
+  };
+
+  return evaluateUnary(std::move(arg.right), f);
 }
 
 
@@ -1179,10 +1229,10 @@ static Array evaluate(Atop<Values,T> arg, Context &context)
 {
   return
     evaluate(
-      Atop<Array,T>{
+      atop(
         makeArrayFromValues(std::move(arg.left)),
-        std::move(arg.right),
-      },
+        std::move(arg.right)
+      ),
       context
     );
 }
@@ -1395,18 +1445,8 @@ evaluate(
 
 static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
 {
-  if (isScalar(arg.right)) {
-    return isNot(arg.right);
-  }
-
-  size_t n = arg.right.values().size();
-  Values values;
-
-  for (size_t i=0; i!=n; ++i) {
-    values.push_back(isNot(arg.right.values()[i]));
-  }
-
-  return Array(arg.right.shape(), std::move(values));
+  auto f = [](const Array& x){ return isNot(x); };
+  return evaluateUnary(std::move(arg.right), f);
 }
 
 
@@ -1455,6 +1495,30 @@ static Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
 
   cerr << "arg.right: " << arg.right << "\n";
   assert(false);
+}
+
+
+static Array
+evaluate(
+  Fork<
+    Array,
+    Fork<
+      Function<Plus>,
+      Operator<Beside>,
+      Function<Divide>
+    >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  Array a1 = std::move(arg.left);
+  Array a2 = std::move(arg.right);
+  auto f1 = std::move(arg.mid.left);
+  auto f2 = std::move(arg.mid.right);
+  Array a = evaluate(atop(std::move(f2), std::move(a2)), context);
+  Array b = evaluate(fork(std::move(a1),std::move(f1),std::move(a)), context);
+  return b;
 }
 
 
@@ -1630,16 +1694,64 @@ join(Keyword<RightArg> left, Atop<Function<T>, Array> right, Context &)
 }
 
 
-template <typename T>
-static Partial<Operator<T>,Array>
-join(Operator<T> left, Atop<Function<Iota>,Array> right, Context &context)
+static
+Atop<
+  BoundOperator<Function<Plus>, Reduce>,
+  Array
+>
+join(
+  Function<Plus> left,
+  Atop<
+    Partial<
+      Operator<Reduce>,
+      Function<Iota>
+    >,
+    Array
+  > right,
+  Context& context
+)
 {
-  return { left, evaluate(std::move(right), context) };
+  return {
+    { std::move(left) },
+    evaluate(
+      atop(
+        std::move(right.left.right),
+        std::move(right.right)
+      ),
+      context
+    )
+  };
 }
 
 
-static Atop<Partial<Operator<Product>,Function<Times>>, Array>
-join(Operator<Product>, Atop<Function<Times>,Array> right, Context &)
+static
+Atop<Fork<Function<Plus>,Operator<Beside>,Function<Divide>>, Array>
+join(
+  Function<Plus> left,
+  Atop<
+    Partial<
+      Operator<Beside>,
+      Function<Divide>
+    >,
+    Array
+  > right,
+  Context&
+)
+{
+  return {
+    {
+      std::move(left),
+      std::move(right.left.left),
+      std::move(right.left.right)
+    },
+    std::move(right.right)
+  };
+}
+
+
+template <typename T, typename U>
+static Atop<Partial<Operator<U>,Function<T>>, Array>
+join(Operator<U>, Atop<Function<T>,Array> right, Context &)
 {
   return {{},std::move(right.right)};
 }
@@ -1964,13 +2076,7 @@ join(
 {
   return {
     left.left,
-    evaluate(
-      Atop<Function<Iota>,Array>
-      {
-        left.right, std::move(right)
-      }
-      , context
-    )
+    evaluate( atop(std::move(left.right), std::move(right)) , context)
   };
 }
 
@@ -2023,6 +2129,7 @@ struct Placeholder {
   static constexpr Operator<Reduce>    reduce = {};
   static constexpr Operator<Product>   product = {};
   static constexpr Operator<Outer>     outer = {};
+  static constexpr Operator<Beside>    beside = {};
   static constexpr Keyword<Empty>      empty = {};
   static constexpr Keyword<Assign>     assign = {};
   static constexpr Keyword<RightArg>   right_arg = {};
@@ -2069,6 +2176,7 @@ constexpr Operator<Each>      Placeholder::each;
 constexpr Operator<Reduce>    Placeholder::reduce;
 constexpr Operator<Product>   Placeholder::product;
 constexpr Operator<Outer>     Placeholder::outer;
+constexpr Operator<Beside>    Placeholder::beside;
 
 
 template <typename T>
@@ -2140,6 +2248,7 @@ static void runSimpleTests()
   assert(_(2, _.power, 3) == _(8));
   assert(_(_.dfn(1, _.plus, _.right_arg), 2) == _(3));
   assert(_(_.dfn(_(_.right_arg)), 5) == _(5));
+  assert(_(1, _.plus, _.beside, _.divide, 2) == 1.5);
 }
 
 
@@ -2290,10 +2399,24 @@ static void testCircle()
 }
 
 
+#if ADD_TEST
+static void testGrille()
+{
+  Placeholder _;
+  Array grid = 0, grille = 0;
+  _(_(grid, grille), _.assign, 5, 5, _.beside, _.reshape,
+    "VRYIALCLQIFKNEVPLARKMPLFF", "XXX X XXX X X XXX XXX  XX");
+}
+#endif
+
+
 int main()
 {
   runSimpleTests();
   testAssignment();
   testExamples();
   testCircle();
+#if ADD_TEST
+  testGrille();
+#endif
 }
