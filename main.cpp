@@ -7,6 +7,7 @@
 
 #define ADD_TEST 0
 
+
 using std::cerr;
 using std::ostream;
 using Number = double;
@@ -770,6 +771,14 @@ static Var evaluate(Var arg, Context &)
 }
 
 
+#if ADD_TEST
+static vector<Var> evaluate(vector<Var> arg, Context &)
+{
+  return arg;
+}
+#endif
+
+
 static inline Array evaluate(Number arg, Context &)
 {
   return arg;
@@ -1214,6 +1223,25 @@ static Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
 }
 
 
+#if ADD_TEST
+static Array
+evaluate(
+  Fork<
+    Array,
+    Partial<
+      Operator<Beside>,
+      Function<Reshape>
+    >,
+    Array
+  >,
+  Context&
+)
+{
+  assert(false);
+}
+#endif
+
+
 template <typename T>
 static Array evaluate(Fork<Values,T,Array> arg, Context &context)
 {
@@ -1594,10 +1622,10 @@ static Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
 }
 
 
-static Atop<Keyword<Assign>,Array>
+static Partial<Keyword<Assign>,Array>
 join(Keyword<Assign> left, Array right, Context &)
 {
-  return { left, std::move(right) };
+  return { std::move(left), std::move(right) };
 }
 
 
@@ -1639,21 +1667,16 @@ join(Function<T> left, Values right, Context &context)
 }
 
 
-static Array join(Var left, Atop<Keyword<Assign>, Array> right, Context&)
+static Fork<Var,Keyword<Assign>,Array>
+join(Var left, Partial<Keyword<Assign>, Array> right, Context&)
 {
-  assert(left.ptr);
-  *left.ptr = std::move(right.right);
-  return Array(*left.ptr);
+  return { left, std::move(right.left), std::move(right.right) };
 }
 
 
 template <typename T>
-static Atop<Keyword<Assign>,Array>
-join(
-  Keyword<Assign> left,
-  Fork<Values, Function<T>, Array> right,
-  Context& context
-)
+static Partial<Keyword<Assign>,Array>
+join(Keyword<Assign> left, T right, Context& context)
 {
   return { std::move(left), evaluate(std::move(right), context) };
 }
@@ -1947,6 +1970,202 @@ join(
 )
 {
   return { { std::move(left) }, std::move(right.right) };
+}
+
+
+#if ADD_TEST
+static Atop<
+  BoundOperator<
+    Function<Reshape>,
+    Each
+  >,
+  Array
+>
+join(
+  Function<Reshape> left,
+  Partial<Operator<Each>, Array> right,
+  Context&
+)
+{
+  return {
+    {
+      std::move(left),
+    },
+    std::move(right.right)
+  };
+}
+#endif
+
+
+#if ADD_TEST
+static
+Partial<
+  Operator<Beside>,
+  Atop<
+    BoundOperator<
+      Function<Reshape>,
+      Each
+    >,
+    Array
+  >
+>
+join(
+  Operator<Beside> left,
+  Atop<
+    BoundOperator<
+      Function<Reshape>,
+      Each
+    >,
+    Array
+  > right,
+  Context&
+)
+{
+  return { std::move(left), std::move(right) };
+}
+#endif
+
+
+#if ADD_TEST
+static
+Fork<
+  Fork<
+    Array,
+    Operator<Beside>,
+    Function<Reshape>
+  >,
+  Operator<Each>,
+  Array
+>
+join(
+  Array left,
+  Partial<
+    Operator<Beside>,
+    Atop<
+      BoundOperator<
+        Function<Reshape>,
+        Each
+      >,
+      Array
+    >
+  > right,
+  Context&
+)
+{
+  return {
+    {
+      std::move(left),
+      std::move(right.left),
+      std::move(right.right.left.left)
+    },
+    {},
+    std::move(right.right.right)
+  };
+}
+#endif
+
+
+#if ADD_TEST
+static
+Fork<
+  Fork<
+    Values,
+    Operator<Beside>,
+    Function<Reshape>
+  >,
+  Operator<Each>,
+  Array
+>
+join(
+  Array left,
+  Fork<
+    Fork<
+      Array,
+      Operator<Beside>,
+      Function<Reshape>
+    >,
+    Operator<Each>,
+    Array
+  > right,
+  Context&
+)
+{
+  return {
+    {
+      { std::move(left), std::move(right.left.left) },
+      std::move(right.left.mid),
+      std::move(right.left.right),
+    },
+    std::move(right.mid),
+    std::move(right.right)
+  };
+}
+#endif
+
+
+#if 0
+static
+Partial<
+  Keyword<Assign>,
+  Fork<
+    Fork<
+      Values,
+      Operator<Beside>,
+      Function<Reshape>
+    >,
+    Operator<Each>,
+    Array
+  >
+>
+join(
+  Keyword<Assign> left,
+  Fork<
+    Fork<
+      Values,
+      Operator<Beside>,
+      Function<Reshape>
+    >,
+    Operator<Each>,
+    Array
+  > right,
+  Context&
+)
+{
+  return { std::move(left), std::move(right) };
+}
+#endif
+
+
+#if ADD_TEST
+static Fork<vector<Var>, Keyword<Assign>, Array>
+join(
+  vector<Var> left,
+  Partial< Keyword<Assign>, Array > right,
+  Context&
+)
+{
+  return { std::move(left), std::move(right.left), std::move(right.right) };
+}
+#endif
+
+
+static Array evaluate(Fork<Var, Keyword<Assign>, Array> arg, Context&)
+{
+  assert(arg.left.ptr);
+  *arg.left.ptr = std::move(arg.right);
+  return Array(*arg.left.ptr);
+}
+
+
+template <typename T>
+static Atop<Function<T>, Array>
+join(
+  Function<T> left,
+  Fork<Var, Keyword<Assign>, Array> right,
+  Context& context
+)
+{
+  return { std::move(left), evaluate(std::move(right), context) };
 }
 
 
@@ -2404,7 +2623,7 @@ static void testGrille()
 {
   Placeholder _;
   Array grid = 0, grille = 0;
-  _(_(grid, grille), _.assign, 5, 5, _.beside, _.reshape,
+  _(_(grid, grille), _.assign, 5, 5, _.beside, _.reshape, _.each,
     "VRYIALCLQIFKNEVPLARKMPLFF", "XXX X XXX X X XXX XXX  XX");
 }
 #endif
