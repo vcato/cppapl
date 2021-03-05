@@ -7,10 +7,15 @@
 
 #define ADD_TEST 0
 
-
 using std::cerr;
 using std::ostream;
 using Number = double;
+
+
+static int product(const vector<int> &arg)
+{
+  return std::accumulate(arg.begin(), arg.end(), 1, std::multiplies<>());
+}
 
 
 namespace {
@@ -175,6 +180,13 @@ private:
   struct Box {
     Shape shape;
     Values values;
+
+    Box(Shape shape, Values values)
+    : shape(std::move(shape)),
+      values(std::move(values))
+    {
+      assert(product(this->shape) == int(this->values.size()));
+    }
 
     friend bool operator==(const Box &a, const Box &b)
     {
@@ -459,6 +471,9 @@ struct Empty;
 struct Assign;
 struct Drop;
 struct RightArg;
+#if ADD_TEST
+struct Where;
+#endif
 }
 
 
@@ -628,12 +643,6 @@ static Optional<int> maybeInteger(const Array &a)
 }
 
 
-static int product(const Array::Shape &arg)
-{
-  return std::accumulate(arg.begin(), arg.end(), 1, std::multiplies<>());
-}
-
-
 static void addNCopiesTo(Values &result_values, int n, const Array &v)
 {
   assert(n >= 0);
@@ -724,6 +733,13 @@ static Optional<Array> maybeElement(const Array &a, const Array &index_array)
     else {
       assert(false);
     }
+  }
+  else if (isVector(index_array)) {
+    if (a.shape().size() == 2) {
+      assert(false);
+    }
+
+    assert(false);
   }
   else if (index_array.isNonScalar()) {
     Values values;
@@ -1185,28 +1201,76 @@ static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
 }
 
 
+static Array elements(const Array &a, const Array &indices)
+{
+  int n = indices.shape()[0];
+  Values values;
+
+  for (int i=0; i!=n; ++i) {
+    const Array &index = indices.values()[i];
+
+#if 0
+    if (isVector(index)) {
+      if (a.shape().size() != 2) {
+        cerr << "a.shape().size(): " << a.shape().size() << "\n";
+        assert(false);
+      }
+
+      Optional<int> maybe_m = maybeInteger(index.shape()[0]);
+
+      if (!maybe_m) {
+        assert(false);
+      }
+
+      int m = *maybe_m;
+
+      if (m == 2) {
+        Optional<int> maybe_i1 = maybeInteger(index.values()[0]);
+        Optional<int> maybe_i2 = maybeInteger(index.values()[1]);
+
+        if (!maybe_i1 || !maybe_i2) {
+          assert(false);
+        }
+
+        int i1 = *maybe_i1;
+        int i2 = *maybe_i2;
+
+        if (i1 < 1 || i1 > a.shape()[0]) {
+          assert(false);
+        }
+
+        if (i2 < 1 || i2 > a.shape()[1]) {
+          assert(false);
+        }
+
+        values.push_back(std::move(a.values()[i1*a.shape()[0]]));
+      }
+
+      assert(false);
+    }
+#endif
+
+    Optional<Array> maybe_element = maybeElement(a, index);
+
+    if (maybe_element) {
+      values.push_back(std::move(*maybe_element));
+    }
+    else {
+      assert(false);
+    }
+  }
+
+  return Array({n}, std::move(values));
+}
+
+
 static Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
 {
   Array &right = arg.right.arg;
 
   if (isVector(arg.left)) {
     if (isVector(right)) {
-      int n = right.shape()[0];
-      Values values;
-
-      for (int i=0; i!=n; ++i) {
-        Optional<Array> maybe_element =
-          maybeElement(arg.left, right.values()[i]);
-
-        if (maybe_element) {
-          values.push_back(std::move(*maybe_element));
-        }
-        else {
-          assert(false);
-        }
-      }
-
-      return Array({n}, std::move(values));
+      return elements(/*array*/arg.left, /*indices*/right);
     }
 
     if (Optional<Array> maybe_element = maybeElement(arg.left, right)) {
@@ -1217,29 +1281,18 @@ static Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
     assert(false);
   }
 
+  if (arg.left.shape().size() == 2) {
+    if (isVector(right)) {
+      return elements(/*array*/arg.left, /*indices*/right);
+    }
+
+    assert(false);
+  }
+
   cerr << "arg.left: " << arg.left << "\n";
   cerr << "right: " << right << "\n";
   assert(false);
 }
-
-
-#if ADD_TEST
-static Array
-evaluate(
-  Fork<
-    Array,
-    Partial<
-      Operator<Beside>,
-      Function<Reshape>
-    >,
-    Array
-  >,
-  Context&
-)
-{
-  assert(false);
-}
-#endif
 
 
 template <typename T>
@@ -1674,6 +1727,59 @@ join(Var left, Partial<Keyword<Assign>, Array> right, Context&)
 }
 
 
+#if ADD_TEST
+static Array
+evaluate(
+  Atop<
+    Fork< vector<Array>, Operator<Beside>, Function<Reshape> >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  return
+    evaluate(
+      fork(
+        std::move(arg.left.left),
+        std::move(arg.left.right),
+        std::move(arg.right)
+      ),
+      context
+    );
+}
+#endif
+
+
+#if ADD_TEST
+static Array
+evaluate(
+  Fork<
+    Fork< vector<Array>, Operator<Beside>, Function<Reshape> >,
+    Operator<Each>,
+    Array
+  > arg,
+  Context& context
+)
+{
+  if (isScalar(arg.right)) {
+    assert(false);
+  }
+
+  if (arg.right.shape().size() == 1) {
+    Values values;
+
+    for (auto &x : arg.right.values()) {
+      values.push_back(evaluate(atop(arg.left, std::move(x)), context));
+    }
+
+    return Array(std::move(arg.right.shape()), std::move(values));
+  }
+
+  assert(false);
+}
+#endif
+
+
 template <typename T>
 static Partial<Keyword<Assign>,Array>
 join(Keyword<Assign> left, T right, Context& context)
@@ -2103,39 +2209,6 @@ join(
 #endif
 
 
-#if 0
-static
-Partial<
-  Keyword<Assign>,
-  Fork<
-    Fork<
-      Values,
-      Operator<Beside>,
-      Function<Reshape>
-    >,
-    Operator<Each>,
-    Array
-  >
->
-join(
-  Keyword<Assign> left,
-  Fork<
-    Fork<
-      Values,
-      Operator<Beside>,
-      Function<Reshape>
-    >,
-    Operator<Each>,
-    Array
-  > right,
-  Context&
-)
-{
-  return { std::move(left), std::move(right) };
-}
-#endif
-
-
 #if ADD_TEST
 static Fork<vector<Var>, Keyword<Assign>, Array>
 join(
@@ -2176,6 +2249,87 @@ static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
   auto left = evaluate(std::move(arg1), context);
   return join(std::move(left), std::move(right), context);
 }
+
+
+#if ADD_TEST
+static Array
+evaluate(Fork<vector<Var>, Keyword<Assign>, Array> arg, Context& context)
+{
+  if (isScalar(arg.right)) {
+    assert(false);
+  }
+
+  if (arg.right.shape().size() == 1) {
+    int n = arg.left.size();
+
+    if (n != arg.right.shape()[0]) {
+      assert(false);
+    }
+
+    Values values;
+
+    for (int i=0; i!=n; ++i) {
+      values.push_back(
+        evaluate(
+          fork(arg.left[i], arg.mid, std::move(arg.right.values()[i])),
+          context
+        )
+      );
+    }
+
+    return Array(arg.right.shape(), std::move(values));
+  }
+
+  assert(false);
+}
+#endif
+
+
+#if ADD_TEST
+static Array posIndex(int i, const Array::Shape &shape)
+{
+  Values result;
+  int n = shape.size();
+
+  for (int j=0; j!=n; ++j) {
+    result.push_back(i/shape[j] + 1);
+    i %= shape[j];
+  }
+
+  return makeArrayFromValues(result);
+}
+#endif
+
+
+#if ADD_TEST
+static Array
+evaluate(Atop<Function<Where>, Array> arg, Context&)
+{
+  if (isScalar(arg.right)) {
+    assert(false);
+  }
+
+  if (arg.right.shape().size() == 1) {
+    assert(false);
+  }
+
+  if (arg.right.shape().size() == 2) {
+    int n = arg.right.values().size();
+    Values values;
+
+    for (int i=0; i!=n; ++i) {
+      if (arg.right.values()[i] == 1) {
+        values.push_back(posIndex(i, arg.right.shape()));
+      }
+    }
+
+    int n2 = values.size();
+    return { {n2}, std::move(values) };
+  }
+
+  assert(false);
+}
+#endif
 
 
 template <typename...Args>
@@ -2344,6 +2498,9 @@ struct Placeholder {
   static constexpr Function<Drop>      drop = {};
   static constexpr Function<Enclose>   enclose = {};
   static constexpr Function<GradeUp>   grade_up = {};
+#if ADD_TEST
+  static constexpr Function<Where>     where = {};
+#endif
   static constexpr Operator<Each>      each = {};
   static constexpr Operator<Reduce>    reduce = {};
   static constexpr Operator<Product>   product = {};
@@ -2388,6 +2545,9 @@ constexpr Function<MemberOf>  Placeholder::member_of;
 constexpr Function<Not>       Placeholder::isnot;
 constexpr Function<Enclose>   Placeholder::enclose;
 constexpr Function<GradeUp>   Placeholder::grade_up;
+#if ADD_TEST
+constexpr Function<Where>     Placeholder::where;
+#endif
 constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Keyword<RightArg>   Placeholder::right_arg;
@@ -2625,6 +2785,11 @@ static void testGrille()
   Array grid = 0, grille = 0;
   _(_(grid, grille), _.assign, 5, 5, _.beside, _.reshape, _.each,
     "VRYIALCLQIFKNEVPLARKMPLFF", "XXX X XXX X X XXX XXX  XX");
+
+  cerr << "grid: " << grid << "\n";
+  cerr << "grille: " << grille << "\n";
+  Array result = _(grid, _.index(_.where, grille, _.equal, ' '));
+  cerr << "result: " << result << "\n";
 }
 #endif
 
