@@ -5,8 +5,6 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
-#define ADD_TEST 0
-
 using std::cerr;
 using std::ostream;
 using Number = double;
@@ -268,6 +266,12 @@ static bool isAllCharacters(const Values &v, int start, int n)
 }
 
 
+static bool isAllCharacters(const Values &v)
+{
+  return isAllCharacters(v, 0, v.size());
+}
+
+
 static void
 printSpanOn(ostream &stream, const Values &v, int start, int n)
 {
@@ -296,6 +300,11 @@ printNonScalarArrayOn(
 )
 {
   assert(!shape.empty());
+
+  if (shape.size() == 1 && isAllCharacters(values)) {
+    printSpanOn(stream, values, 0, values.size());
+    return;
+  }
 
   stream << "(";
 
@@ -471,9 +480,7 @@ struct Empty;
 struct Assign;
 struct Drop;
 struct RightArg;
-#if ADD_TEST
 struct Where;
-#endif
 }
 
 
@@ -736,6 +743,27 @@ static Optional<Array> maybeElement(const Array &a, const Array &index_array)
   }
   else if (isVector(index_array)) {
     if (a.shape().size() == 2) {
+      if (index_array.shape()[0] == 2) {
+        Optional<int> maybe_i1 = maybeInteger(index_array.values()[0]);
+        Optional<int> maybe_i2 = maybeInteger(index_array.values()[1]);
+
+        if (!maybe_i1 || !maybe_i2) {
+          assert(false);
+        }
+
+        int i1 = *maybe_i1;
+        int i2 = *maybe_i2;
+
+        if (i1 < 1 || i1 > a.shape()[0]) {
+          assert(false);
+        }
+
+        if (i2 < 1 || i2 > a.shape()[1]) {
+          assert(false);
+        }
+
+        return Array(a.values()[(i1-1)*a.shape()[1] + (i2-1)]);
+      }
       assert(false);
     }
 
@@ -787,12 +815,10 @@ static Var evaluate(Var arg, Context &)
 }
 
 
-#if ADD_TEST
 static vector<Var> evaluate(vector<Var> arg, Context &)
 {
   return arg;
 }
-#endif
 
 
 static inline Array evaluate(Number arg, Context &)
@@ -1208,47 +1234,6 @@ static Array elements(const Array &a, const Array &indices)
 
   for (int i=0; i!=n; ++i) {
     const Array &index = indices.values()[i];
-
-#if 0
-    if (isVector(index)) {
-      if (a.shape().size() != 2) {
-        cerr << "a.shape().size(): " << a.shape().size() << "\n";
-        assert(false);
-      }
-
-      Optional<int> maybe_m = maybeInteger(index.shape()[0]);
-
-      if (!maybe_m) {
-        assert(false);
-      }
-
-      int m = *maybe_m;
-
-      if (m == 2) {
-        Optional<int> maybe_i1 = maybeInteger(index.values()[0]);
-        Optional<int> maybe_i2 = maybeInteger(index.values()[1]);
-
-        if (!maybe_i1 || !maybe_i2) {
-          assert(false);
-        }
-
-        int i1 = *maybe_i1;
-        int i2 = *maybe_i2;
-
-        if (i1 < 1 || i1 > a.shape()[0]) {
-          assert(false);
-        }
-
-        if (i2 < 1 || i2 > a.shape()[1]) {
-          assert(false);
-        }
-
-        values.push_back(std::move(a.values()[i1*a.shape()[0]]));
-      }
-
-      assert(false);
-    }
-#endif
 
     Optional<Array> maybe_element = maybeElement(a, index);
 
@@ -1727,7 +1712,6 @@ join(Var left, Partial<Keyword<Assign>, Array> right, Context&)
 }
 
 
-#if ADD_TEST
 static Array
 evaluate(
   Atop<
@@ -1747,10 +1731,8 @@ evaluate(
       context
     );
 }
-#endif
 
 
-#if ADD_TEST
 static Array
 evaluate(
   Fork<
@@ -1777,7 +1759,6 @@ evaluate(
 
   assert(false);
 }
-#endif
 
 
 template <typename T>
@@ -2079,81 +2060,46 @@ join(
 }
 
 
-#if ADD_TEST
-static Atop<
-  BoundOperator<
-    Function<Reshape>,
-    Each
-  >,
-  Array
->
+template <typename T, typename U>
+static Atop< BoundOperator< Function<T>, U >, Array >
 join(
-  Function<Reshape> left,
-  Partial<Operator<Each>, Array> right,
+  Function<T> left,
+  Partial<Operator<U>, Array> right,
   Context&
 )
 {
-  return {
-    {
-      std::move(left),
-    },
-    std::move(right.right)
-  };
+  return { { std::move(left) }, std::move(right.right) };
 }
-#endif
 
 
-#if ADD_TEST
+template <typename T, typename U, typename V>
 static
 Partial<
-  Operator<Beside>,
-  Atop<
-    BoundOperator<
-      Function<Reshape>,
-      Each
-    >,
-    Array
-  >
+  Operator<T>,
+  Atop< BoundOperator< Function<U>, V >, Array >
 >
 join(
-  Operator<Beside> left,
-  Atop<
-    BoundOperator<
-      Function<Reshape>,
-      Each
-    >,
-    Array
-  > right,
+  Operator<T> left,
+  Atop< BoundOperator< Function<U>, V >, Array > right,
   Context&
 )
 {
   return { std::move(left), std::move(right) };
 }
-#endif
 
 
-#if ADD_TEST
+template <typename T, typename U, typename V>
 static
 Fork<
-  Fork<
-    Array,
-    Operator<Beside>,
-    Function<Reshape>
-  >,
-  Operator<Each>,
+  Fork< Array, Operator<T>, Function<U> >,
+  Operator<V>,
   Array
 >
 join(
   Array left,
   Partial<
-    Operator<Beside>,
-    Atop<
-      BoundOperator<
-        Function<Reshape>,
-        Each
-      >,
-      Array
-    >
+    Operator<T>,
+    Atop< BoundOperator< Function<U>, V >, Array >
   > right,
   Context&
 )
@@ -2168,29 +2114,20 @@ join(
     std::move(right.right.right)
   };
 }
-#endif
 
 
-#if ADD_TEST
+template <typename T, typename U, typename V>
 static
 Fork<
-  Fork<
-    Values,
-    Operator<Beside>,
-    Function<Reshape>
-  >,
-  Operator<Each>,
+  Fork< Values, Operator<T>, Function<U> >,
+  Operator<V>,
   Array
 >
 join(
   Array left,
   Fork<
-    Fork<
-      Array,
-      Operator<Beside>,
-      Function<Reshape>
-    >,
-    Operator<Each>,
+    Fork< Array, Operator<T>, Function<U> >,
+    Operator<V>,
     Array
   > right,
   Context&
@@ -2206,10 +2143,8 @@ join(
     std::move(right.right)
   };
 }
-#endif
 
 
-#if ADD_TEST
 static Fork<vector<Var>, Keyword<Assign>, Array>
 join(
   vector<Var> left,
@@ -2219,7 +2154,6 @@ join(
 {
   return { std::move(left), std::move(right.left), std::move(right.right) };
 }
-#endif
 
 
 static Array evaluate(Fork<Var, Keyword<Assign>, Array> arg, Context&)
@@ -2251,7 +2185,6 @@ static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 }
 
 
-#if ADD_TEST
 static Array
 evaluate(Fork<vector<Var>, Keyword<Assign>, Array> arg, Context& context)
 {
@@ -2282,28 +2215,25 @@ evaluate(Fork<vector<Var>, Keyword<Assign>, Array> arg, Context& context)
 
   assert(false);
 }
-#endif
 
 
-#if ADD_TEST
 static Array posIndex(int i, const Array::Shape &shape)
 {
   Values result;
   int n = shape.size();
 
-  for (int j=0; j!=n; ++j) {
-    result.push_back(i/shape[j] + 1);
-    i %= shape[j];
+  for (int j=n; j!=0; ) {
+    --j;
+    result.push_back(i % shape[j] + 1);
+    i /= shape[j];
   }
 
+  std::reverse(result.begin(), result.end());
   return makeArrayFromValues(result);
 }
-#endif
 
 
-#if ADD_TEST
-static Array
-evaluate(Atop<Function<Where>, Array> arg, Context&)
+static Array evaluate(Atop<Function<Where>, Array> arg, Context&)
 {
   if (isScalar(arg.right)) {
     assert(false);
@@ -2329,7 +2259,6 @@ evaluate(Atop<Function<Where>, Array> arg, Context&)
 
   assert(false);
 }
-#endif
 
 
 template <typename...Args>
@@ -2379,6 +2308,19 @@ static auto evaluate(Dfn<T> arg, Context&)
 }
 
 
+static Array makeArray(Array a)
+{
+  return a;
+}
+
+
+static inline Array makeArray(Var a)
+{
+  assert(a.ptr);
+  return Array(*a.ptr);
+}
+
+
 template <typename F>
 static auto evaluateExpr(Expr<F> &&expr)
 {
@@ -2399,7 +2341,7 @@ template <typename T>
 static Atop<Array,Index<Array>>
 join(Var left, Index<Expr<T>> right, Context &context)
 {
-  Array i = evaluateExpr(std::move(right.arg));
+  Array i = makeArray(evaluateExpr(std::move(right.arg)));
   return join(Array(*left.ptr), Index<Array>{std::move(i)}, context);
 }
 
@@ -2498,9 +2440,7 @@ struct Placeholder {
   static constexpr Function<Drop>      drop = {};
   static constexpr Function<Enclose>   enclose = {};
   static constexpr Function<GradeUp>   grade_up = {};
-#if ADD_TEST
   static constexpr Function<Where>     where = {};
-#endif
   static constexpr Operator<Each>      each = {};
   static constexpr Operator<Reduce>    reduce = {};
   static constexpr Operator<Product>   product = {};
@@ -2545,9 +2485,7 @@ constexpr Function<MemberOf>  Placeholder::member_of;
 constexpr Function<Not>       Placeholder::isnot;
 constexpr Function<Enclose>   Placeholder::enclose;
 constexpr Function<GradeUp>   Placeholder::grade_up;
-#if ADD_TEST
 constexpr Function<Where>     Placeholder::where;
-#endif
 constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Keyword<RightArg>   Placeholder::right_arg;
@@ -2778,20 +2716,17 @@ static void testCircle()
 }
 
 
-#if ADD_TEST
 static void testGrille()
 {
   Placeholder _;
   Array grid = 0, grille = 0;
+
   _(_(grid, grille), _.assign, 5, 5, _.beside, _.reshape, _.each,
     "VRYIALCLQIFKNEVPLARKMPLFF", "XXX X XXX X X XXX XXX  XX");
 
-  cerr << "grid: " << grid << "\n";
-  cerr << "grille: " << grille << "\n";
-  Array result = _(grid, _.index(_.where, grille, _.equal, ' '));
-  cerr << "result: " << result << "\n";
+  Array result = _(grid, _.index(_(_.where, grille, _.equal, ' ')));
+  assert(result == makeArrayFromString("ILIKEAPL"));
 }
-#endif
 
 
 int main()
@@ -2800,7 +2735,5 @@ int main()
   testAssignment();
   testExamples();
   testCircle();
-#if ADD_TEST
   testGrille();
-#endif
 }
