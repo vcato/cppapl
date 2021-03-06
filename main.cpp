@@ -1732,13 +1732,6 @@ static Array combine(Context &context, Keyword<RightArg>)
 }
 
 
-template <typename T>
-static T combine(Context &, T arg)
-{
-  return arg;
-}
-
-
 namespace {
 template <typename T>
 Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
@@ -2036,30 +2029,11 @@ Partial<Operator<T>,Function<U>> join(Operator<T>, Function<U>, Context &)
 
 
 namespace {
-Atop<BoundOperator<Function<Plus>,Reduce>,Function<Iota>>
-join(Function<Plus>, Partial<Operator<Reduce>, Function<Iota>>, Context &)
+template <typename T, typename U, typename V>
+Atop<BoundOperator<Function<T>,V>,Function<U>>
+join(Function<T>, Partial<Operator<V>, Function<U>>, Context &)
 {
   return {};
-}
-}
-
-
-namespace {
-template <typename T>
-Atop<BoundOperator<Function<Plus>,T>,Array>
-join(Function<Plus> /*left*/, Partial<Operator<T>,Array> right, Context &)
-{
-  return { {}, std::move(right.right) };
-}
-}
-
-
-namespace {
-template <typename T>
-Atop<BoundOperator<Function<First>,T>,Array>
-join(Function<First> /*left*/, Partial<Operator<T>,Array> right, Context &)
-{
-  return {{},std::move(right.right)};
 }
 }
 
@@ -2335,6 +2309,13 @@ join(
 {
   return { std::move(left), evaluate(std::move(right), context) };
 }
+}
+
+
+template <typename T>
+static T combine(Context &, T arg)
+{
+  return arg;
 }
 
 
