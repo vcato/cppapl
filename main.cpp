@@ -277,9 +277,11 @@ printSpanOn(ostream &stream, const Values &v, int start, int n)
 {
   if (isAllCharacters(v, start, n)) {
     stream << " \"";
+
     for (int i=start; i!=start+n; ++i) {
       stream << v[i].asCharacter();
     }
+
     stream << "\"";
   }
   else {
@@ -322,12 +324,6 @@ printNonScalarArrayOn(
   }
 
   stream << " )";
-}
-
-
-static const Array::Shape &shapeOf(const Array &a)
-{
-  return a.shape();
 }
 
 
@@ -431,26 +427,32 @@ struct Var { Array *const ptr; };
 using Vars = vector<Var>;
 
 
+namespace {
 template <typename Left, typename Right>
 struct Atop {
   Left left;
   Right right;
 };
+}
 
 
+namespace {
 template <typename Left, typename Right>
 struct Partial {
   Left left;
   Right right;
 };
+}
 
 
+namespace {
 template <typename Left, typename Mid, typename Right>
 struct Fork {
   Left left;
   Mid mid;
   Right right;
 };
+}
 
 
 namespace {
@@ -802,50 +804,65 @@ static bool isNot(const Array &a)
 }
 
 
-static Array evaluate(int arg, Context &)
+namespace {
+Array evaluate(int arg, Context &)
 {
   return Number(arg);
 }
+}
 
 
-static Var evaluate(Var arg, Context &)
+namespace {
+Var evaluate(Var arg, Context &)
 {
   assert(arg.ptr);
   return arg;
 }
-
-
-static vector<Var> evaluate(vector<Var> arg, Context &)
-{
-  return arg;
 }
 
 
-static inline Array evaluate(Number arg, Context &)
+namespace {
+vector<Var> evaluate(vector<Var> arg, Context &)
 {
   return arg;
 }
-
-
-static inline Array evaluate(char arg, Context &)
-{
-  return arg;
 }
 
 
-static Array evaluate(Array value, Context &)
+namespace {
+inline Array evaluate(Number arg, Context &)
+{
+  return arg;
+}
+}
+
+
+namespace {
+inline Array evaluate(char arg, Context &)
+{
+  return arg;
+}
+}
+
+
+namespace {
+Array evaluate(Array value, Context &)
 {
   return value;
 }
-
-
-static Array evaluate(Values arg, Context &)
-{
-  return makeArrayFromValues(std::move(arg));
 }
 
 
-static Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
+namespace {
+Array evaluate(Values arg, Context &)
+{
+  return makeArrayFromValues(std::move(arg));
+}
+}
+
+
+namespace {
+Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
 {
   Values values;
 
@@ -861,9 +878,11 @@ static Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
 
   return Array({ int(shape.size()) }, std::move(values));
 }
+}
 
 
-static Array evaluate(Atop<Function<Divide>,Array> arg, Context &)
+namespace {
+Array evaluate(Atop<Function<Divide>,Array> arg, Context &)
 {
   auto f = [](const Array &a){
     if (!a.isNumber()) {
@@ -876,9 +895,11 @@ static Array evaluate(Atop<Function<Divide>,Array> arg, Context &)
 
   return evaluateUnary(std::move(arg.right), f);
 }
+}
 
 
-static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
+namespace {
+Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
 {
   if (isScalar(arg.right)) {
     Optional<int> maybe_n = maybeInteger(arg.right);
@@ -934,9 +955,11 @@ static Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
   cerr << "arg.right: " << arg.right << "\n";
   assert(false);
 }
+}
 
 
-static Array evaluate(Atop<Function<First>,Array> arg, Context &)
+namespace {
+Array evaluate(Atop<Function<First>,Array> arg, Context &)
 {
   if (isScalar(arg.right)) {
     if (arg.right.isBox()) {
@@ -951,9 +974,11 @@ static Array evaluate(Atop<Function<First>,Array> arg, Context &)
 
   assert(false);
 }
+}
 
 
-static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
+namespace {
+Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
 {
   if (isScalar(arg.right)) {
     Optional<int> maybe_value = maybeInteger(arg.right);
@@ -994,10 +1019,11 @@ static Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
   cerr << "arg.right: " << arg.right << "\n";
   assert(false);
 }
+}
 
 
-static Array
-evaluate(Fork<Array, Function<Roll>, Array> arg, Context &context)
+namespace {
+Array evaluate(Fork<Array, Function<Roll>, Array> arg, Context &context)
 {
   if (arg.left.isNumber() && arg.right.isNumber()) {
     Optional<int> maybe_count = maybeInteger(arg.left);
@@ -1022,45 +1048,57 @@ evaluate(Fork<Array, Function<Roll>, Array> arg, Context &context)
   cerr << "arg.right: " << arg.right << "\n";
   assert(false);
 }
+}
 
 
-static Array evaluate(Fork<Array,Function<Greater>,Array> arg, Context &)
+namespace {
+Array evaluate(Fork<Array,Function<Greater>,Array> arg, Context &)
 {
   auto f = [](Number a, Number b){ return a > b; };
   return evaluateNumberBinary(arg, f);
 }
+}
 
 
+namespace {
 template <typename A, typename B, typename C>
-static Atop<BoundOperator<A,B>,Function<C>>
+Atop<BoundOperator<A,B>,Function<C>>
 evaluate(Atop<BoundOperator<A,B>,Function<C>> arg, Context &)
 {
   return arg;
 }
-
-
-template <typename T>
-static Function<T> evaluate(Function<T> arg, Context &)
-{
-  return arg;
 }
 
 
+namespace {
 template <typename T>
-static Operator<T> evaluate(Operator<T> arg, Context &)
+Function<T> evaluate(Function<T> arg, Context &)
 {
   return arg;
 }
-
-
-template <typename T>
-static Keyword<T> evaluate(Keyword<T> arg, Context &)
-{
-  return arg;
 }
 
 
-static Array evaluate(Keyword<RightArg> /*arg*/, Context &context)
+namespace {
+template <typename T>
+Operator<T> evaluate(Operator<T> arg, Context &)
+{
+  return arg;
+}
+}
+
+
+namespace {
+template <typename T>
+Keyword<T> evaluate(Keyword<T> arg, Context &)
+{
+  return arg;
+}
+}
+
+
+namespace {
+Array evaluate(Keyword<RightArg> /*arg*/, Context &context)
 {
   if (!context.right_arg_ptr) {
     assert(false);
@@ -1068,23 +1106,28 @@ static Array evaluate(Keyword<RightArg> /*arg*/, Context &context)
 
   return Array(*context.right_arg_ptr);
 }
-
-
-static Array evaluate(Keyword<Empty>, Context &)
-{
-  return makeArrayFromValues({});
 }
 
 
-static Array evaluate(Fork<Array,Function<Equal>,Array> arg, Context &)
+namespace {
+Array evaluate(Keyword<Empty>, Context &)
+{
+  return makeArrayFromValues({});
+}
+}
+
+
+namespace {
+Array evaluate(Fork<Array,Function<Equal>,Array> arg, Context &)
 {
   auto f = [](auto a, auto b){ return Number(a == b); };
   return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
 }
+}
 
 
-static Array
-evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
+namespace {
+Array evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 {
   if (isScalar(arg.left)) {
     if (arg.right.shape().size() == 1) {
@@ -1115,9 +1158,11 @@ evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 
   assert(false);
 }
+}
 
 
-static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
+namespace {
+Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
 {
   if (Optional<int> maybe_n = maybeInteger(arg.left)) {
     int n = *maybe_n;
@@ -1156,9 +1201,11 @@ static Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
 
   return Array(std::move(shape), std::move(values));
 }
+}
 
 
-static Array
+namespace {
+Array
 evaluate(
   Fork<
     Array,
@@ -1207,9 +1254,11 @@ evaluate(
 
   return Array(std::move(shape), std::move(values));
 }
+}
 
 
-static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
+namespace {
+Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
 {
   if (isScalar(arg.left)) {
     Array left_value = std::move(arg.left);
@@ -1225,9 +1274,11 @@ static Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
 
   return Array(arg.left.shape(), std::move(values));
 }
+}
 
 
-static Array elements(const Array &a, const Array &indices)
+namespace {
+Array elements(const Array &a, const Array &indices)
 {
   int n = indices.shape()[0];
   Values values;
@@ -1247,9 +1298,11 @@ static Array elements(const Array &a, const Array &indices)
 
   return Array({n}, std::move(values));
 }
+}
 
 
-static Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
+namespace {
+Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
 {
   Array &right = arg.right.arg;
 
@@ -1278,20 +1331,24 @@ static Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
   cerr << "right: " << right << "\n";
   assert(false);
 }
+}
 
 
+namespace {
 template <typename T>
-static Array evaluate(Fork<Values,T,Array> arg, Context &context)
+Array evaluate(Fork<Values,T,Array> arg, Context &context)
 {
   Array left = makeArrayFromValues(std::move(arg.left));
   using Return = Fork<Array, T, Array>;
   auto x = Return{std::move(left), arg.mid, std::move(arg.right)};
   return evaluate(std::move(x), context);
 }
+}
 
 
+namespace {
 template <typename T>
-static Array evaluate(Atop<Values,T> arg, Context &context)
+Array evaluate(Atop<Values,T> arg, Context &context)
 {
   return
     evaluate(
@@ -1302,44 +1359,56 @@ static Array evaluate(Atop<Values,T> arg, Context &context)
       context
     );
 }
+}
 
 
-static Array evaluate(Fork<Array,Function<Plus>,Array> arg, Context &)
+namespace {
+Array evaluate(Fork<Array,Function<Plus>,Array> arg, Context &)
 {
   auto f = [](Number a, Number b) { return a + b; };
   return evaluateNumberBinary(std::move(arg), f);
 }
+}
 
 
-static Array evaluate(Fork<Array,Function<Minus>,Array> arg, Context &)
+namespace {
+Array evaluate(Fork<Array,Function<Minus>,Array> arg, Context &)
 {
   auto f = [](Number a, Number b) { return a - b; };
   return evaluateNumberBinary(std::move(arg), f);
 }
+}
 
 
-static Array evaluate(Fork<Array,Function<Times>,Array> arg, Context &)
+namespace {
+Array evaluate(Fork<Array,Function<Times>,Array> arg, Context &)
 {
   auto f = [](Number a, Number b) { return a * b; };
   return evaluateNumberBinary(std::move(arg), f);
 }
+}
 
 
-static Array evaluate(Fork<Array, Function<Divide>, Array> arg, Context&)
+namespace {
+Array evaluate(Fork<Array, Function<Divide>, Array> arg, Context&)
 {
   auto f = [](Number a, Number b) { return a / b; };
   return evaluateNumberBinary(arg, f);
 }
+}
 
 
-static Array evaluate(Fork<Array, Function<Power>, Array> arg, Context&)
+namespace {
+Array evaluate(Fork<Array, Function<Power>, Array> arg, Context&)
 {
   auto f = [](Number a, Number b) { return std::pow(a,b); };
   return evaluateNumberBinary(arg, f);
 }
+}
 
 
-static Array
+namespace {
+Array
 evaluate(Atop<BoundOperator<Function<Plus>,Reduce>,Array> arg, Context &)
 {
   const Array &right = arg.right;
@@ -1360,10 +1429,12 @@ evaluate(Atop<BoundOperator<Function<Plus>,Reduce>,Array> arg, Context &)
 
   assert(false);
 }
+}
 
 
+namespace {
 template <typename T>
-static Array
+Array
 evaluate(
   Atop<BoundOperator<Dfn<T> , Each>, Array> arg,
   Context& context
@@ -1387,9 +1458,11 @@ evaluate(
 
   assert(false);
 }
+}
 
 
-static Array
+namespace {
+Array
 evaluate(Atop<BoundOperator<Function<First>,Each>,Array> arg, Context &)
 {
   if (arg.right.shape().empty()) {
@@ -1430,9 +1503,11 @@ evaluate(Atop<BoundOperator<Function<First>,Each>,Array> arg, Context &)
 
   assert(false);
 }
+}
 
 
-static Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
+namespace {
+Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
 {
   Array left = std::move(arg.left);
   Array right = std::move(arg.right);
@@ -1475,9 +1550,11 @@ static Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
   size_t n = values.size();
   return Array({ int(n) }, std::move(values));
 }
+}
 
 
-static Array
+namespace {
+Array
 evaluate(
   Fork<
     Values,
@@ -1507,16 +1584,20 @@ evaluate(
   }
   assert(false);
 }
+}
 
 
-static Array evaluate(Atop<Function<Not>, Array> arg, Context &)
+namespace {
+Array evaluate(Atop<Function<Not>, Array> arg, Context &)
 {
   auto f = [](const Array& x){ return isNot(x); };
   return evaluateUnary(std::move(arg.right), f);
 }
+}
 
 
-static Array evaluate(Atop<Function<Enclose>,Array> arg, Context &)
+namespace {
+Array evaluate(Atop<Function<Enclose>,Array> arg, Context &)
 {
   if (arg.right.isSimple()) {
     return std::move(arg.right);
@@ -1524,9 +1605,11 @@ static Array evaluate(Atop<Function<Enclose>,Array> arg, Context &)
 
   return Array::Boxed{std::move(arg.right)};
 }
+}
 
 
-static Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
+namespace {
+Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
 {
   if (isVector(arg.right)) {
     Array::Shape indices;
@@ -1562,9 +1645,11 @@ static Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
   cerr << "arg.right: " << arg.right << "\n";
   assert(false);
 }
+}
 
 
-static Array
+namespace {
+Array
 evaluate(
   Fork<
     Array,
@@ -1585,6 +1670,7 @@ evaluate(
   Array a = evaluate(atop(std::move(f2), std::move(a2)), context);
   Array b = evaluate(fork(std::move(a1),std::move(f1),std::move(a)), context);
   return b;
+}
 }
 
 
@@ -1653,66 +1739,83 @@ static T combine(Context &, T arg)
 }
 
 
+namespace {
 template <typename T>
-static Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
+Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
 {
   return { left, std::move(right) };
 }
+}
 
 
-static Partial<Keyword<Assign>,Array>
+namespace {
+Partial<Keyword<Assign>,Array>
 join(Keyword<Assign> left, Array right, Context &)
 {
   return { std::move(left), std::move(right) };
 }
+}
 
 
+namespace {
 template <typename T>
-static Partial<Operator<T>,Array>
+Partial<Operator<T>,Array>
 join(Operator<T> left, Array right, Context &)
 {
   return { std::move(left), std::move(right) };
 }
+}
 
 
+namespace {
 template <typename T, typename U>
-static Partial<Operator<T>,Array>
+Partial<Operator<T>,Array>
 join(Operator<T> left, Fork<Values, Function<U>, Array> right, Context &context)
 {
   return { std::move(left), evaluate(std::move(right), context) };
 }
+}
 
 
+namespace {
 template <typename T>
-static auto join(T left, Var right, Context &context)
+auto join(T left, Var right, Context &context)
 {
   assert(right.ptr);
   return join(std::move(left), Array(*right.ptr), context);
 }
-
-
-static Vars join(Var left, Var right, Context &)
-{
-  return { std::move(left), std::move(right) };
 }
 
 
+namespace {
+Vars join(Var left, Var right, Context &)
+{
+  return { std::move(left), std::move(right) };
+}
+}
+
+
+namespace {
 template <typename T>
-static Atop<Function<T>,Array>
+Atop<Function<T>,Array>
 join(Function<T> left, Values right, Context &context)
 {
   return { left, evaluate(std::move(right), context) };
 }
+}
 
 
-static Fork<Var,Keyword<Assign>,Array>
+namespace {
+Fork<Var,Keyword<Assign>,Array>
 join(Var left, Partial<Keyword<Assign>, Array> right, Context&)
 {
   return { left, std::move(right.left), std::move(right.right) };
 }
+}
 
 
-static Array
+namespace {
+Array
 evaluate(
   Atop<
     Fork< vector<Array>, Operator<Beside>, Function<Reshape> >,
@@ -1731,9 +1834,11 @@ evaluate(
       context
     );
 }
+}
 
 
-static Array
+namespace {
+Array
 evaluate(
   Fork<
     Fork< vector<Array>, Operator<Beside>, Function<Reshape> >,
@@ -1759,56 +1864,64 @@ evaluate(
 
   assert(false);
 }
+}
 
 
+namespace {
 template <typename T>
-static Partial<Keyword<Assign>,Array>
+Partial<Keyword<Assign>,Array>
 join(Keyword<Assign> left, T right, Context& context)
 {
   return { std::move(left), evaluate(std::move(right), context) };
 }
+}
 
 
+namespace {
 template <typename T>
-static Fork<Values,T,Array> join(Array left, Atop<T,Array> right, Context &)
+Fork<Values,T,Array> join(Array left, Atop<T,Array> right, Context &)
 {
   Values new_left;
   new_left.push_back(std::move(left));
   return { std::move(new_left), std::move(right.left), std::move(right.right) };
 }
+}
 
 
+namespace {
 template <typename T>
-static Fork<Values,T,Array>
+Fork<Values,T,Array>
 join(Array left, Fork<Values,T,Array> right, Context &)
 {
   Fork<Values,T,Array> result = std::move(right);
   result.left.insert(result.left.begin(), std::move(left));
   return result;
 }
+}
 
 
+namespace {
 template <typename T1, typename T2>
-static Atop<Function<T1>,Array>
+Atop<Function<T1>,Array>
 join(Function<T1> left, Atop<Function<T2>,Array> right, Context &context)
 {
   return join(left, evaluate(std::move(right), context), context);
 }
+}
 
 
+namespace {
 template <typename T>
-static Fork<Keyword<RightArg>, Function<T>, Array>
+Fork<Keyword<RightArg>, Function<T>, Array>
 join(Keyword<RightArg> left, Atop<Function<T>, Array> right, Context &)
 {
   return { std::move(left), std::move(right.left), std::move(right.right) };
 }
+}
 
 
-static
-Atop<
-  BoundOperator<Function<Plus>, Reduce>,
-  Array
->
+namespace {
+Atop< BoundOperator<Function<Plus>, Reduce>, Array >
 join(
   Function<Plus> left,
   Atop<
@@ -1832,9 +1945,10 @@ join(
     )
   };
 }
+}
 
 
-static
+namespace {
 Atop<Fork<Function<Plus>,Operator<Beside>,Function<Divide>>, Array>
 join(
   Function<Plus> left,
@@ -1857,17 +1971,21 @@ join(
     std::move(right.right)
   };
 }
+}
 
 
+namespace {
 template <typename T, typename U>
-static Atop<Partial<Operator<U>,Function<T>>, Array>
+Atop<Partial<Operator<U>,Function<T>>, Array>
 join(Operator<U>, Atop<Function<T>,Array> right, Context &)
 {
   return {{},std::move(right.right)};
 }
+}
 
 
-static Atop<Fork<Function<Plus>, Operator<Product>, Function<Times>>,Array>
+namespace {
+Atop<Fork<Function<Plus>, Operator<Product>, Function<Times>>,Array>
 join(
   Function<Plus>,
   Atop<Partial<Operator<Product>, Function<Times> >, Array> right,
@@ -1876,9 +1994,10 @@ join(
 {
   return {{},std::move(right.right)};
 }
+}
 
 
-static
+namespace {
 Atop<
   Function<Fork<Operator<Outer>, Operator<Product>, Function<Times>>>,
   Array
@@ -1894,49 +2013,60 @@ join(
     std::move(right.right)
   };
 }
+}
 
 
+namespace {
 template <typename T>
-static Partial<Operator<T>,Array>
+Partial<Operator<T>,Array>
 join(Operator<T> left, Values right, Context &)
 {
   return { left, makeArrayFromValues(std::move(right)) };
 }
-
-
-template <typename T, typename U>
-static Partial<Operator<T>,Function<U>>
-join(Operator<T>, Function<U>, Context &)
-{
-  return {};
 }
 
 
-static Atop<BoundOperator<Function<Plus>,Reduce>,Function<Iota>>
+namespace {
+template <typename T, typename U>
+Partial<Operator<T>,Function<U>> join(Operator<T>, Function<U>, Context &)
+{
+  return {};
+}
+}
+
+
+namespace {
+Atop<BoundOperator<Function<Plus>,Reduce>,Function<Iota>>
 join(Function<Plus>, Partial<Operator<Reduce>, Function<Iota>>, Context &)
 {
   return {};
 }
+}
 
 
+namespace {
 template <typename T>
-static Atop<BoundOperator<Function<Plus>,T>,Array>
+Atop<BoundOperator<Function<Plus>,T>,Array>
 join(Function<Plus> /*left*/, Partial<Operator<T>,Array> right, Context &)
 {
   return { {}, std::move(right.right) };
 }
+}
 
 
+namespace {
 template <typename T>
-static Atop<BoundOperator<Function<First>,T>,Array>
+Atop<BoundOperator<Function<First>,T>,Array>
 join(Function<First> /*left*/, Partial<Operator<T>,Array> right, Context &)
 {
   return {{},std::move(right.right)};
 }
+}
 
 
+namespace {
 template<typename T, typename U>
-static Atop<Function<T>,Array>
+Atop<Function<T>,Array>
 join(
   Function<T> left,
   Fork<Values,Function<U>,Array> right,
@@ -1945,27 +2075,33 @@ join(
 {
   return { std::move(left), evaluate(std::move(right), context) };
 }
+}
 
 
-static Values join(Array left, Array right, Context &)
+namespace {
+Values join(Array left, Array right, Context &)
 {
   Values result;
   result.push_back(std::move(left));
   result.push_back(std::move(right));
   return result;
 }
+}
 
 
+namespace {
 template <typename T>
-static Fork<Values,T,Array> join(Array left, Partial<T,Array> right, Context &)
+Fork<Values,T,Array> join(Array left, Partial<T,Array> right, Context &)
 {
   Values new_left;
   new_left.push_back(std::move(left));
   return { std::move(new_left), std::move(right.left), std::move(right.right) };
 }
+}
 
 
-static Values join(Array left, Values right, Context &)
+namespace {
+Values join(Array left, Values right, Context &)
 {
   Values result;
   result.push_back(std::move(left));
@@ -1976,24 +2112,30 @@ static Values join(Array left, Values right, Context &)
 
   return result;
 }
-
-
-template <typename T>
-static auto join(Var left, T right, Context &context)
-{
-  return join(Array(*left.ptr), std::move(right), context);
 }
 
 
+namespace {
 template <typename T>
-static Atop<Dfn<T>,Array>
+auto join(Var left, T right, Context &context)
+{
+  return join(Array(*left.ptr), std::move(right), context);
+}
+}
+
+
+namespace {
+template <typename T>
+Atop<Dfn<T>,Array>
 join(Dfn<T> left, Array right, Context&)
 {
   return {std::move(left), std::move(right)};
 }
+}
 
 
-static Atop<Values, Index<Array>>
+namespace {
+Atop<Values, Index<Array>>
 join(Array left, Atop<Array, Index<Array>> right, Context&)
 {
   return {
@@ -2001,9 +2143,11 @@ join(Array left, Atop<Array, Index<Array>> right, Context&)
     std::move(right.right)
   };
 }
+}
 
 
-static Atop<Values, Index<Array>>
+namespace {
+Atop<Values, Index<Array>>
 join(Array left, Atop<Values, Index<Array>> right, Context&)
 {
   Values new_left;
@@ -2014,6 +2158,7 @@ join(Array left, Atop<Values, Index<Array>> right, Context&)
   }
 
   return { std::move(new_left), std::move(right.right) };
+}
 }
 
 
@@ -2029,13 +2174,16 @@ static Array makeArrayFromVars(Vars vars)
 }
 
 
+namespace {
 template <typename T>
-static auto join(Function<T> left, Vars right, Context &context)
+auto join(Function<T> left, Vars right, Context &context)
 {
   return join(std::move(left), makeArrayFromVars(std::move(right)), context);
 }
+}
 
 
+namespace {
 template <typename T, typename U, typename V>
 auto
 join(
@@ -2046,10 +2194,12 @@ join(
 {
   return join(left, evaluate(std::move(right), context), context);
 }
+}
 
 
+namespace {
 template <typename T>
-static Atop< BoundOperator<Dfn<T>,Each> , Array >
+Atop< BoundOperator<Dfn<T>,Each> , Array >
 join(
   Dfn<T> left,
   Partial<Operator<Each>, Array> right,
@@ -2058,10 +2208,12 @@ join(
 {
   return { { std::move(left) }, std::move(right.right) };
 }
+}
 
 
+namespace {
 template <typename T, typename U>
-static Atop< BoundOperator< Function<T>, U >, Array >
+Atop< BoundOperator< Function<T>, U >, Array >
 join(
   Function<T> left,
   Partial<Operator<U>, Array> right,
@@ -2070,10 +2222,11 @@ join(
 {
   return { { std::move(left) }, std::move(right.right) };
 }
+}
 
 
+namespace {
 template <typename T, typename U, typename V>
-static
 Partial<
   Operator<T>,
   Atop< BoundOperator< Function<U>, V >, Array >
@@ -2086,10 +2239,11 @@ join(
 {
   return { std::move(left), std::move(right) };
 }
+}
 
 
+namespace {
 template <typename T, typename U, typename V>
-static
 Fork<
   Fork< Array, Operator<T>, Function<U> >,
   Operator<V>,
@@ -2114,10 +2268,11 @@ join(
     std::move(right.right.right)
   };
 }
+}
 
 
+namespace {
 template <typename T, typename U, typename V>
-static
 Fork<
   Fork< Values, Operator<T>, Function<U> >,
   Operator<V>,
@@ -2143,9 +2298,11 @@ join(
     std::move(right.right)
   };
 }
+}
 
 
-static Fork<vector<Var>, Keyword<Assign>, Array>
+namespace {
+Fork<vector<Var>, Keyword<Assign>, Array>
 join(
   vector<Var> left,
   Partial< Keyword<Assign>, Array > right,
@@ -2154,18 +2311,22 @@ join(
 {
   return { std::move(left), std::move(right.left), std::move(right.right) };
 }
+}
 
 
-static Array evaluate(Fork<Var, Keyword<Assign>, Array> arg, Context&)
+namespace {
+Array evaluate(Fork<Var, Keyword<Assign>, Array> arg, Context&)
 {
   assert(arg.left.ptr);
   *arg.left.ptr = std::move(arg.right);
   return Array(*arg.left.ptr);
 }
+}
 
 
+namespace {
 template <typename T>
-static Atop<Function<T>, Array>
+Atop<Function<T>, Array>
 join(
   Function<T> left,
   Fork<Var, Keyword<Assign>, Array> right,
@@ -2173,6 +2334,7 @@ join(
 )
 {
   return { std::move(left), evaluate(std::move(right), context) };
+}
 }
 
 
@@ -2185,7 +2347,8 @@ static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 }
 
 
-static Array
+namespace {
+Array
 evaluate(Fork<vector<Var>, Keyword<Assign>, Array> arg, Context& context)
 {
   if (isScalar(arg.right)) {
@@ -2215,6 +2378,7 @@ evaluate(Fork<vector<Var>, Keyword<Assign>, Array> arg, Context& context)
 
   assert(false);
 }
+}
 
 
 static Array posIndex(int i, const Array::Shape &shape)
@@ -2233,7 +2397,8 @@ static Array posIndex(int i, const Array::Shape &shape)
 }
 
 
-static Array evaluate(Atop<Function<Where>, Array> arg, Context&)
+namespace {
+Array evaluate(Atop<Function<Where>, Array> arg, Context&)
 {
   if (isScalar(arg.right)) {
     assert(false);
@@ -2258,6 +2423,7 @@ static Array evaluate(Atop<Function<Where>, Array> arg, Context&)
   }
 
   assert(false);
+}
 }
 
 
@@ -2294,17 +2460,21 @@ static Array evaluateDfn(const Dfn<T> &dfn, Array arg, Context &context)
 }
 
 
+namespace {
 template <typename T>
-static Array evaluate(Atop<Dfn<T>,Array> arg, Context &context)
+Array evaluate(Atop<Dfn<T>,Array> arg, Context &context)
 {
   return evaluateDfn(arg.left, std::move(arg.right), context);
 }
+}
 
 
+namespace {
 template <typename T>
-static auto evaluate(Dfn<T> arg, Context&)
+auto evaluate(Dfn<T> arg, Context&)
 {
   return arg;
+}
 }
 
 
@@ -2330,28 +2500,34 @@ static auto evaluateExpr(Expr<F> &&expr)
 }
 
 
-static Atop<Array,Index<Array>>
+namespace {
+Atop<Array,Index<Array>>
 join(Array left, Index<Array> right, Context &)
 {
   return { std::move(left), std::move(right) };
 }
+}
 
 
+namespace {
 template <typename T>
-static Atop<Array,Index<Array>>
+Atop<Array,Index<Array>>
 join(Var left, Index<Expr<T>> right, Context &context)
 {
   Array i = makeArray(evaluateExpr(std::move(right.arg)));
   return join(Array(*left.ptr), Index<Array>{std::move(i)}, context);
 }
+}
 
 
+namespace {
 template <typename T>
-static Atop<Array,Index<Array>>
+Atop<Array,Index<Array>>
 join(Array left, Index<Expr<T>> right, Context &context)
 {
   Array i = evaluateExpr(std::move(right.arg));
   return join(std::move(left), Index<Array>{std::move(i)}, context);
+}
 }
 
 
@@ -2366,23 +2542,28 @@ Expr<F>::~Expr()
 }
 
 
+namespace {
 template <typename F>
-static auto evaluate(Expr<F> expr, Context &context)
+auto evaluate(Expr<F> expr, Context &context)
 {
   auto result = evaluateExprInContext(expr.f, context);
   expr.evaluated = true;
   return result;
 }
-
-
-template <typename T, typename F>
-static auto join(T left, Expr<F> right, Context &context)
-{
-  return join(std::move(left), evaluateExpr(std::move(right)), context);
 }
 
 
-static Atop<BoundOperator<Function<Plus>,Reduce>,Array>
+namespace {
+template <typename T, typename F>
+auto join(T left, Expr<F> right, Context &context)
+{
+  return join(std::move(left), evaluateExpr(std::move(right)), context);
+}
+}
+
+
+namespace {
+Atop<BoundOperator<Function<Plus>,Reduce>,Array>
 join(
   Atop<BoundOperator<Function<Plus>, Reduce>, Function<Iota> > left,
   Array right,
@@ -2393,6 +2574,7 @@ join(
     left.left,
     evaluate( atop(std::move(left.right), std::move(right)) , context)
   };
+}
 }
 
 
@@ -2516,6 +2698,12 @@ template <typename F>
 Expr<F>::operator Array() &&
 {
   return evaluateExpr(std::move(*this));
+}
+
+
+static const Array::Shape &shapeOf(const Array &a)
+{
+  return a.shape();
 }
 
 
