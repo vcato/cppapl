@@ -1335,6 +1335,62 @@ Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
 
 
 namespace {
+static Array
+reduce(Function<Plus>, const Array &right, int begin_index, int end_index)
+{
+  Number total = 0;
+
+  for (int i = begin_index; i!=end_index; ++i) {
+    auto &x = right.values()[i];
+
+    if (!x.isNumber()) {
+      assert(false);
+    }
+
+    total += x.asNumber();
+  }
+
+  return total;
+}
+}
+
+
+namespace {
+static Array
+evaluate(
+  Fork<Array, BoundOperator<Function<Plus>, Reduce>, Array> arg, Context&
+)
+{
+  if (arg.left.isNonScalar()) {
+    assert(false);
+  }
+
+  Optional<int> maybe_n = maybeInteger(arg.left);
+
+  if (!maybe_n) {
+    assert(false);
+  }
+
+  int n = *maybe_n;
+
+  if (!isVector(arg.right)) {
+    assert(false);
+  }
+
+  int m = arg.right.shape()[0];
+
+  Values values;
+
+  for (int i=0; i!=m-(n-1); ++i) {
+    values.push_back(reduce(arg.mid.left, arg.right, i, i+n));
+  }
+
+  return { {m-(n-1)}, std::move(values) };
+}
+}
+
+
+namespace {
 template <typename T>
 Array evaluate(Fork<Values,T,Array> arg, Context &context)
 {
@@ -1414,17 +1470,9 @@ evaluate(Atop<BoundOperator<Function<Plus>,Reduce>,Array> arg, Context &)
   const Array &right = arg.right;
 
   if (right.shape().size() == 1) {
-    Number total = 0;
-
-    for (auto &x : right.values()) {
-      if (!x.isNumber()) {
-        assert(false);
-      }
-
-      total += x.asNumber();
-    }
-
-    return total;
+    int start_index = 0;
+    int end_index = right.values().size();
+    return reduce(arg.left.left, arg.right, start_index, end_index);
   }
 
   assert(false);
@@ -2735,6 +2783,8 @@ static void runSimpleTests()
   assert(_(_.dfn(1, _.plus, _.right_arg), 2) == _(3));
   assert(_(_.dfn(_(_.right_arg)), 5) == _(5));
   assert(_(1, _.plus, _.beside, _.divide, 2) == 1.5);
+  assert(_(2, _.plus, _.reduce, _.iota, 4) == _(1+2, 2+3, 3+4));
+  assert(_(3, _.plus, _.reduce, _.iota, 4) == _(1+2+3, 2+3+4));
 }
 
 
