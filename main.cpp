@@ -5,6 +5,9 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
+#define ADD_TEST2 0
+#define ADD_TEST 0
+
 using std::cerr;
 using std::ostream;
 using Number = double;
@@ -2785,6 +2788,9 @@ static void runSimpleTests()
   assert(_(1, _.plus, _.beside, _.divide, 2) == 1.5);
   assert(_(2, _.plus, _.reduce, _.iota, 4) == _(1+2, 2+3, 3+4));
   assert(_(3, _.plus, _.reduce, _.iota, 4) == _(1+2+3, 2+3+4));
+#if ADD_TEST
+  assert(_(_.reverse, _.iota, 5) == _(5,4,3,2,1));
+#endif
 }
 
 
@@ -2948,6 +2954,21 @@ static void testGrille()
 }
 
 
+#if ADD_TEST2
+static void test3000()
+{
+  Placeholder _;
+
+  assert(
+    _(_.times, _.reduce,
+      _(_.times, _.selfie, _.outer, _.catenate, _.right),
+      _.rotate, _.iota, 5
+    ) == 3000
+  );
+}
+#endif
+
+
 int main()
 {
   runSimpleTests();
@@ -2955,4 +2976,7 @@ int main()
   testExamples();
   testCircle();
   testGrille();
+#if ADD_TEST2
+  test3000();
+#endif
 }
