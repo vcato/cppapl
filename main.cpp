@@ -6,7 +6,6 @@
 #include "vectorio.hpp"
 
 #define ADD_TEST2 0
-#define ADD_TEST 0
 
 using std::cerr;
 using std::ostream;
@@ -475,7 +474,9 @@ struct Reduce;
 struct Product;
 struct Outer;
 struct Beside;
+struct Commute;
 struct Roll;
+struct Right;
 struct Replicate;
 struct Enclose;
 struct GradeUp;
@@ -486,6 +487,8 @@ struct Assign;
 struct Drop;
 struct RightArg;
 struct Where;
+struct Reverse;
+struct Catenate;
 }
 
 
@@ -962,6 +965,19 @@ Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
 
 
 namespace {
+Array evaluate(Atop<Function<Reverse>,Array> arg, Context &)
+{
+  if (isVector(arg.right)) {
+    std::reverse(arg.right.values().begin(), arg.right.values().end());
+    return std::move(arg.right);
+  }
+
+  assert(false);
+}
+}
+
+
+namespace {
 Array evaluate(Atop<Function<First>,Array> arg, Context &)
 {
   if (isScalar(arg.right)) {
@@ -1021,6 +1037,32 @@ Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
 
   cerr << "arg.right: " << arg.right << "\n";
   assert(false);
+}
+}
+
+
+namespace {
+Array evaluate(Fork<Array, Function<Catenate>, Array> arg, Context &)
+{
+  if (isVector(arg.left) && isVector(arg.right)) {
+    Values values = std::move(arg.left).values();
+
+    for (auto &x : arg.right.values()) {
+      values.push_back(std::move(x));
+    }
+
+    return makeArrayFromValues(std::move(values));
+  }
+
+  assert(false);
+}
+}
+
+
+namespace {
+Array evaluate(Fork<Array, Function<Right>, Array> arg, Context &)
+{
+  return std::move(arg.right);
 }
 }
 
@@ -1483,6 +1525,21 @@ evaluate(Atop<BoundOperator<Function<Plus>,Reduce>,Array> arg, Context &)
 }
 
 
+template <typename T>
+static Array
+evaluate(
+  Atop<
+    BoundOperator< Function<T>, Commute >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  return
+    evaluate(fork(Array(arg.right), arg.left.left, Array(arg.right)), context);
+}
+
+
 namespace {
 template <typename T>
 Array
@@ -1823,7 +1880,27 @@ join(Operator<T> left, Fork<Values, Function<U>, Array> right, Context &context)
 
 namespace {
 template <typename T>
-auto join(T left, Var right, Context &context)
+auto join( Function<T> left, Var right, Context& context)
+{
+  assert(right.ptr);
+  return join(std::move(left), Array(*right.ptr), context);
+}
+}
+
+
+namespace {
+template <typename T>
+auto join(Operator<T> left, Var right, Context& context)
+{
+  assert(right.ptr);
+  return join(std::move(left), Array(*right.ptr), context);
+}
+}
+
+
+namespace {
+template <typename T>
+auto join(Dfn<T> left, Var right, Context& context)
 {
   assert(right.ptr);
   return join(std::move(left), Array(*right.ptr), context);
@@ -2370,6 +2447,97 @@ static T combine(Context &, T arg)
 }
 
 
+#if ADD_TEST2
+static Atop<Function<Catenate>, Function<Right>>
+join(Function<Catenate> left, Function<Right> right, Context&)
+{
+  return { std::move(left), std::move(right) };
+}
+#endif
+
+
+#if ADD_TEST2
+static Fork<Function<First>, Function<Catenate>, Function<Right>>
+join(
+  Function<First> left,
+  Atop<Function<Catenate>, Function<Right> > right,
+  Context&
+)
+{
+  return { std::move(left), std::move(right.left), std::move(right.right) };
+}
+#endif
+
+
+#if ADD_TEST2
+template <typename T, typename U>
+static Partial<Operator<T>, U> join(Operator<T> left, U right, Context &)
+{
+  return { std::move(left), std::move(right) };
+}
+#endif
+
+
+#if ADD_TEST2
+namespace {
+Fork<
+  Fork<
+    BoundOperator<Function<Times>, Commute>,
+    Operator<Beside>,
+    Function<First>
+  >,
+  Function<Catenate>,
+  Function<Right>
+>
+join(
+  Function<Times> left,
+  Partial<
+    Operator<Commute>,
+    Partial<
+      Operator<Beside>,
+      Fork<
+        Function<First>,
+        Function<Catenate>,
+        Function<Right>
+      >
+    >
+  > right,
+  Context&
+)
+{
+  return {
+    {
+      { std::move(left) },
+      std::move(right.right.left),
+      std::move(right.right.right.left)
+    },
+    std::move(right.right.right.mid),
+    std::move(right.right.right.right)
+  };
+}
+}
+#endif
+
+
+#if ADD_TEST2
+evaluate(
+  Fork<
+    Fork<
+      BoundOperator< Function<Times>, Commute >,
+      Operator<Beside>,
+      Function<First>
+    >,
+    Function<Catenate>,
+    Function<Right>
+  >,
+  Context&
+)
+{
+  assert(false);
+}
+#endif
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
@@ -2655,11 +2823,15 @@ struct Placeholder {
   static constexpr Function<Enclose>   enclose = {};
   static constexpr Function<GradeUp>   grade_up = {};
   static constexpr Function<Where>     where = {};
+  static constexpr Function<Reverse>   reverse = {};
+  static constexpr Function<Catenate>  catenate = {};
+  static constexpr Function<Right>     right = {};
   static constexpr Operator<Each>      each = {};
   static constexpr Operator<Reduce>    reduce = {};
   static constexpr Operator<Product>   product = {};
   static constexpr Operator<Outer>     outer = {};
   static constexpr Operator<Beside>    beside = {};
+  static constexpr Operator<Commute>   commute = {};
   static constexpr Keyword<Empty>      empty = {};
   static constexpr Keyword<Assign>     assign = {};
   static constexpr Keyword<RightArg>   right_arg = {};
@@ -2700,6 +2872,9 @@ constexpr Function<Not>       Placeholder::isnot;
 constexpr Function<Enclose>   Placeholder::enclose;
 constexpr Function<GradeUp>   Placeholder::grade_up;
 constexpr Function<Where>     Placeholder::where;
+constexpr Function<Reverse>   Placeholder::reverse;
+constexpr Function<Catenate>  Placeholder::catenate;
+constexpr Function<Right>     Placeholder::right;
 constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Keyword<RightArg>   Placeholder::right_arg;
@@ -2708,6 +2883,7 @@ constexpr Operator<Reduce>    Placeholder::reduce;
 constexpr Operator<Product>   Placeholder::product;
 constexpr Operator<Outer>     Placeholder::outer;
 constexpr Operator<Beside>    Placeholder::beside;
+constexpr Operator<Commute>   Placeholder::commute;
 
 
 template <typename T>
@@ -2788,9 +2964,11 @@ static void runSimpleTests()
   assert(_(1, _.plus, _.beside, _.divide, 2) == 1.5);
   assert(_(2, _.plus, _.reduce, _.iota, 4) == _(1+2, 2+3, 3+4));
   assert(_(3, _.plus, _.reduce, _.iota, 4) == _(1+2+3, 2+3+4));
-#if ADD_TEST
   assert(_(_.reverse, _.iota, 5) == _(5,4,3,2,1));
-#endif
+  assert(_(1,2, _.catenate, 3,4) == _(1,2,3,4));
+  assert(_(1, _.right, 2) == 2);
+  assert(_(_.times, _.commute, 2) == 4);
+  assert(_(_.plus, _.commute, 3) == 6);
 }
 
 
@@ -2961,8 +3139,8 @@ static void test3000()
 
   assert(
     _(_.times, _.reduce,
-      _(_.times, _.selfie, _.outer, _.catenate, _.right),
-      _.rotate, _.iota, 5
+      _(_.times, _.commute, _.beside, _.first, _.catenate, _.right),
+      _.reverse, _.iota, 5
     ) == 3000
   );
 }
