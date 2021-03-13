@@ -6,7 +6,8 @@
 #include "vectorio.hpp"
 
 #define ADD_TEST2 0
-#define CHANGE_EVALUATE 0
+#define CHANGE_REDUCE 0
+  // Change Atop<Function<A>,Operator<Reduce>> to a Function
 
 using std::cerr;
 using std::ostream;
@@ -369,7 +370,7 @@ static Array makeArrayFromString(const char *arg)
 
 namespace {
 template <typename T> struct Keyword { };
-template <typename T> struct Function { };
+template <typename T> struct Function { T body; };
 template <typename T> struct Dfn { T f; };
 template <typename T> struct Index { T arg; };
 template <typename T> struct Operator { };
@@ -453,37 +454,37 @@ struct Fork {
 
 
 namespace {
-struct Shape;
-struct Reshape;
-struct First;
-struct Each;
-struct Equal;
-struct Plus;
-struct Minus;
-struct Times;
-struct Divide;
-struct Power;
-struct Greater;
-struct Iota;
-struct Reduce;
-struct Product;
-struct Outer;
-struct Beside;
-struct Commute;
-struct Roll;
-struct Right;
-struct Replicate;
-struct Enclose;
-struct GradeUp;
-struct MemberOf;
-struct Not;
-struct Empty;
-struct Assign;
-struct Drop;
-struct RightArg;
-struct Where;
-struct Reverse;
-struct Catenate;
+struct Shape {};
+struct Reshape {};
+struct First {};
+struct Each {};
+struct Equal {};
+struct Plus {};
+struct Minus {};
+struct Times {};
+struct Divide {};
+struct Power {};
+struct Greater {};
+struct Iota {};
+struct Reduce {};
+struct Product {};
+struct Outer {};
+struct Beside {};
+struct Commute {};
+struct Roll {};
+struct Right {};
+struct Replicate {};
+struct Enclose {};
+struct GradeUp {};
+struct MemberOf {};
+struct Not {};
+struct Empty {};
+struct Assign {};
+struct Drop {};
+struct RightArg {};
+struct Where {};
+struct Reverse {};
+struct Catenate {};
 }
 
 
@@ -1100,16 +1101,6 @@ Array evaluate(Fork<Array,Function<Greater>,Array> arg, Context &)
 }
 
 
-#if CHANGE_EVALUATE
-namespace {
-template <typename A, typename B, typename C>
-Function<Atop<BoundOperator<A,B>,Function<C>>>
-evaluate(Atop<BoundOperator<A,B>,Function<C>> arg, Context &)
-{
-  return arg;
-}
-}
-#else
 namespace {
 template <typename A, typename B, typename C>
 Atop<Atop<A,Operator<B>>,Function<C>>
@@ -1118,7 +1109,6 @@ evaluate(Atop<Atop<A,Operator<B>>,Function<C>> arg, Context &)
   return arg;
 }
 }
-#endif
 
 
 namespace {
@@ -2069,7 +2059,11 @@ join(Keyword<RightArg> left, Atop<Function<T>, Array> right, Context &)
 
 namespace {
 Atop<
+#if CHANGE_REDUCE
+  Function<Atop<Function<Plus>, Operator<Reduce>>>,
+#else
   Atop<Function<Plus>, Operator<Reduce>>,
+#endif
   Array
 >
 join(
@@ -2084,8 +2078,19 @@ join(
   Context& context
 )
 {
+  using X1 = Atop<Function<Plus>, Operator<Reduce>>;
+  X1 x1 = { std::move(left), std::move(right.left.left) };
+#if CHANGE_REDUCE
+  using X2 = Function<X1>;
+  X2 x2 = { std::move(x1) };
+#endif
+
   return {
-    { std::move(left), std::move(right.left.left) },
+#if CHANGE_REDUCE
+    std::move(x2),
+#else
+    std::move(x1),
+#endif
     evaluate(
       atop(
         std::move(right.left.right),
@@ -2681,27 +2686,6 @@ Array evaluate(Atop<Function<Where>, Array> arg, Context&)
   assert(false);
 }
 }
-
-
-#if 0
-namespace {
-auto
-evaluate(
-  Atop<
-    Function<
-      Atop<
-        BoundOperator<Function<Plus>, Reduce>,
-        Function<Iota>
-      >
-    >,
-    Array
-  > arg,
-  Context&
-)
-{
-  return evaluate(
-}
-#endif
 
 
 template <typename...Args>
