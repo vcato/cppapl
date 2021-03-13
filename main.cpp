@@ -1401,7 +1401,11 @@ static Array
 evaluate(
   Fork<
     Array,
+#if CHANGE_REDUCE
+    Function<Atop<Function<Plus>, Operator<Reduce>>>,
+#else
     Atop<Function<Plus>, Operator<Reduce> >,
+#endif
     Array
   > arg,
   Context&
@@ -1428,7 +1432,11 @@ evaluate(
   Values values;
 
   for (int i=0; i!=m-(n-1); ++i) {
+#if CHANGE_REDUCE
+    values.push_back(reduce(arg.mid.body.left, arg.right, i, i+n));
+#else
     values.push_back(reduce(arg.mid.left, arg.right, i, i+n));
+#endif
   }
 
   return { {m-(n-1)}, std::move(values) };
@@ -1513,7 +1521,11 @@ namespace {
 Array
 evaluate(
   Atop<
+#if CHANGE_REDUCE
+    Function<Atop<Function<Plus>, Operator<Reduce>>>,
+#else
     Atop< Function<Plus>, Operator<Reduce> >,
+#endif
     Array
   > arg,
   Context &
@@ -1524,7 +1536,11 @@ evaluate(
   if (right.shape().size() == 1) {
     int start_index = 0;
     int end_index = right.values().size();
+#if CHANGE_REDUCE
+    return reduce(arg.left.body.left, arg.right, start_index, end_index);
+#else
     return reduce(arg.left.left, arg.right, start_index, end_index);
+#endif
   }
 
   assert(false);
@@ -2193,7 +2209,11 @@ Partial<Operator<T>,Function<U>> join(Operator<T>, Function<U>, Context &)
 namespace {
 template <typename T, typename U, typename V>
 Atop<
+#if CHANGE_REDUCE
+  Function<Atop<Function<T>,Operator<V>>>,
+#else
   Atop<Function<T>,Operator<V>>,
+#endif
   Function<U>
 >
 join(Function<T>, Partial<Operator<V>, Function<U>>, Context &)
@@ -2599,6 +2619,21 @@ evaluate(
 #endif
 
 
+#if 0
+join(
+  Atop<
+    Atop<
+      Function<Plus>,
+      Operator<Reduce>
+    >,
+    Function<Iota>
+  >&,
+  Array,
+  Context&
+)
+#endif
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
@@ -2686,6 +2721,49 @@ Array evaluate(Atop<Function<Where>, Array> arg, Context&)
   assert(false);
 }
 }
+
+
+#if CHANGE_REDUCE
+namespace {
+template <typename A, typename B>
+Function<Atop<Function<A>, Function<B>>>
+evaluate(
+  Atop<Function<A>,Function<B>> arg,
+  Context &
+)
+{
+  return { std::move(arg) };
+}
+}
+#endif
+
+
+#if 0
+namespace {
+auto
+evaluate(
+  std::remove_reference<
+    Atop<
+      Function<
+        Atop<
+          Function<
+            Atop<
+              Function<Plus>,
+              Operator<Reduce>
+            >
+          >,
+          Function<Iota>
+        >
+      >,
+      Array
+    >&
+  >::type,
+  Context&
+)
+{
+}
+}
+#endif
 
 
 template <typename...Args>
@@ -2825,12 +2903,20 @@ auto join(T left, Expr<F> right, Context &context)
 
 namespace {
 Atop<
+#if CHANGE_REDUCE
+  Function<Atop<Function<Plus>,Operator<Reduce>>>,
+#else
   Atop<Function<Plus>,Operator<Reduce>>,
+#endif
   Array
 >
 join(
   Atop<
+#if CHANGE_REDUCE
+    Function<Atop<Function<Plus>, Operator<Reduce>>>,
+#else
     Atop<Function<Plus>, Operator<Reduce>>,
+#endif
     Function<Iota>
   > left,
   Array right,
