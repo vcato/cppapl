@@ -6,6 +6,7 @@
 #include "vectorio.hpp"
 
 #define ADD_TEST2 0
+#define CHANGE_EVALUATE 0
 
 using std::cerr;
 using std::ostream;
@@ -372,12 +373,6 @@ template <typename T> struct Function { };
 template <typename T> struct Dfn { T f; };
 template <typename T> struct Index { T arg; };
 template <typename T> struct Operator { };
-
-template <typename Function, typename Operator>
-struct BoundOperator {
-  Function left;
-};
-
 }
 
 
@@ -1105,14 +1100,25 @@ Array evaluate(Fork<Array,Function<Greater>,Array> arg, Context &)
 }
 
 
+#if CHANGE_EVALUATE
 namespace {
 template <typename A, typename B, typename C>
-Atop<BoundOperator<A,B>,Function<C>>
+Function<Atop<BoundOperator<A,B>,Function<C>>>
 evaluate(Atop<BoundOperator<A,B>,Function<C>> arg, Context &)
 {
   return arg;
 }
 }
+#else
+namespace {
+template <typename A, typename B, typename C>
+Atop<Atop<A,Operator<B>>,Function<C>>
+evaluate(Atop<Atop<A,Operator<B>>,Function<C>> arg, Context &)
+{
+  return arg;
+}
+}
+#endif
 
 
 namespace {
@@ -1403,7 +1409,12 @@ reduce(Function<Plus>, const Array &right, int begin_index, int end_index)
 namespace {
 static Array
 evaluate(
-  Fork<Array, BoundOperator<Function<Plus>, Reduce>, Array> arg, Context&
+  Fork<
+    Array,
+    Atop<Function<Plus>, Operator<Reduce> >,
+    Array
+  > arg,
+  Context&
 )
 {
   if (arg.left.isNonScalar()) {
@@ -1510,7 +1521,13 @@ Array evaluate(Fork<Array, Function<Power>, Array> arg, Context&)
 
 namespace {
 Array
-evaluate(Atop<BoundOperator<Function<Plus>,Reduce>,Array> arg, Context &)
+evaluate(
+  Atop<
+    Atop< Function<Plus>, Operator<Reduce> >,
+    Array
+  > arg,
+  Context &
+)
 {
   const Array &right = arg.right;
 
@@ -1529,7 +1546,7 @@ template <typename T>
 static Array
 evaluate(
   Atop<
-    BoundOperator< Function<T>, Commute >,
+    Atop< Function<T>, Operator<Commute> >,
     Array
   > arg,
   Context& context
@@ -1544,7 +1561,10 @@ namespace {
 template <typename T>
 Array
 evaluate(
-  Atop<BoundOperator<Dfn<T> , Each>, Array> arg,
+  Atop<
+    Atop<Dfn<T> , Operator<Each>>,
+    Array
+  > arg,
   Context& context
 )
 {
@@ -1571,7 +1591,13 @@ evaluate(
 
 namespace {
 Array
-evaluate(Atop<BoundOperator<Function<First>,Each>,Array> arg, Context &)
+evaluate(
+  Atop<
+    Atop<Function<First>,Operator<Each>>,
+    Array
+  > arg,
+  Context &
+)
 {
   if (arg.right.shape().empty()) {
     assert(false);
@@ -2042,7 +2068,10 @@ join(Keyword<RightArg> left, Atop<Function<T>, Array> right, Context &)
 
 
 namespace {
-Atop< BoundOperator<Function<Plus>, Reduce>, Array >
+Atop<
+  Atop<Function<Plus>, Operator<Reduce>>,
+  Array
+>
 join(
   Function<Plus> left,
   Atop<
@@ -2056,7 +2085,7 @@ join(
 )
 {
   return {
-    { std::move(left) },
+    { std::move(left), std::move(right.left.left) },
     evaluate(
       atop(
         std::move(right.left.right),
@@ -2158,7 +2187,10 @@ Partial<Operator<T>,Function<U>> join(Operator<T>, Function<U>, Context &)
 
 namespace {
 template <typename T, typename U, typename V>
-Atop<BoundOperator<Function<T>,V>,Function<U>>
+Atop<
+  Atop<Function<T>,Operator<V>>,
+  Function<U>
+>
 join(Function<T>, Partial<Operator<V>, Function<U>>, Context &)
 {
   return {};
@@ -2290,7 +2322,10 @@ template <typename T, typename U, typename V>
 auto
 join(
   Function<T> left,
-  Atop<BoundOperator<U, V>, Array> right,
+  Atop<
+    Atop<U, Operator<V>>,
+    Array
+  > right,
   Context &context
 )
 {
@@ -2301,28 +2336,40 @@ join(
 
 namespace {
 template <typename T>
-Atop< BoundOperator<Dfn<T>,Each> , Array >
+Atop<
+  Atop<Dfn<T>,Operator<Each>>,
+  Array
+>
 join(
   Dfn<T> left,
   Partial<Operator<Each>, Array> right,
   Context&
 )
 {
-  return { { std::move(left) }, std::move(right.right) };
+  return {
+    { std::move(left), std::move(right.left) },
+    std::move(right.right)
+  };
 }
 }
 
 
 namespace {
 template <typename T, typename U>
-Atop< BoundOperator< Function<T>, U >, Array >
+Atop<
+  Atop< Function<T>, Operator<U> >,
+  Array
+>
 join(
   Function<T> left,
   Partial<Operator<U>, Array> right,
   Context&
 )
 {
-  return { { std::move(left) }, std::move(right.right) };
+  return {
+    { std::move(left), std::move(right.left) },
+    std::move(right.right)
+  };
 }
 }
 
@@ -2331,11 +2378,17 @@ namespace {
 template <typename T, typename U, typename V>
 Partial<
   Operator<T>,
-  Atop< BoundOperator< Function<U>, V >, Array >
+  Atop<
+    Atop< Function<U>, Operator<V> >,
+    Array
+  >
 >
 join(
   Operator<T> left,
-  Atop< BoundOperator< Function<U>, V >, Array > right,
+  Atop<
+    Atop< Function<U>, Operator<V> >,
+    Array
+  > right,
   Context&
 )
 {
@@ -2355,7 +2408,10 @@ join(
   Array left,
   Partial<
     Operator<T>,
-    Atop< BoundOperator< Function<U>, V >, Array >
+    Atop<
+      Atop< Function<U>, Operator<V> >,
+      Array
+    >
   > right,
   Context&
 )
@@ -2627,6 +2683,27 @@ Array evaluate(Atop<Function<Where>, Array> arg, Context&)
 }
 
 
+#if 0
+namespace {
+auto
+evaluate(
+  Atop<
+    Function<
+      Atop<
+        BoundOperator<Function<Plus>, Reduce>,
+        Function<Iota>
+      >
+    >,
+    Array
+  > arg,
+  Context&
+)
+{
+  return evaluate(
+}
+#endif
+
+
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
@@ -2763,9 +2840,15 @@ auto join(T left, Expr<F> right, Context &context)
 
 
 namespace {
-Atop<BoundOperator<Function<Plus>,Reduce>,Array>
+Atop<
+  Atop<Function<Plus>,Operator<Reduce>>,
+  Array
+>
 join(
-  Atop<BoundOperator<Function<Plus>, Reduce>, Function<Iota> > left,
+  Atop<
+    Atop<Function<Plus>, Operator<Reduce>>,
+    Function<Iota>
+  > left,
   Array right,
   Context &context
 )
