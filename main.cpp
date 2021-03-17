@@ -2563,7 +2563,7 @@ static Partial<Operator<T>, U> join(Operator<T> left, U right, Context &)
 namespace {
 Fork<
   Fork<
-    BoundOperator<Function<Times>, Commute>,
+    Atop<Function<Times>, Operator<Commute>>,
     Operator<Beside>,
     Function<First>
   >,
@@ -2588,7 +2588,7 @@ join(
 {
   return {
     {
-      { std::move(left) },
+      { std::move(left), std::move(right.left) },
       std::move(right.right.left),
       std::move(right.right.right.left)
     },
@@ -2601,36 +2601,80 @@ join(
 
 
 #if ADD_TEST2
+namespace {
+template <typename A, typename B, typename C>
+Function<Fork<A,B,C>>
+evaluate(Fork<A,B,C> arg, Context&)
+{
+  return { std::move(arg) };
+}
+}
+#endif
+
+
+#if ADD_TEST2
+namespace {
+Array
 evaluate(
-  Fork<
+  Function<
     Fork<
-      BoundOperator< Function<Times>, Commute >,
-      Operator<Beside>,
-      Function<First>
-    >,
-    Function<Catenate>,
-    Function<Right>
+      Fork<
+        Atop<
+          Function<Times>,
+          Operator<Commute>
+        >,
+        Operator<Beside>,
+        Function<First>
+      >,
+      Function<Catenate>,
+      Function<Right>
+    >
   >,
+  Array,
   Context&
 )
 {
   assert(false);
 }
+}
 #endif
 
 
-#if 0
-join(
+#if ADD_TEST2
+namespace {
+template <typename A, typename B>
+Atop<
   Atop<
-    Atop<
-      Function<Plus>,
-      Operator<Reduce>
+    Function<A>,
+    Operator<Reduce>
+  >,
+  Array
+>
+join(
+  Function<A> left,
+  Atop<
+    Partial<
+      Operator<Reduce>,
+      Function<B>
     >,
-    Function<Iota>
-  >&,
-  Array,
-  Context&
+    Array
+  > right,
+  Context& context
 )
+{
+  return {
+    {
+      std::move(left),
+      std::move(right.left.left),
+    },
+    evaluate(
+      std::move(right.left.right),
+      std::move(right.right),
+      context
+    )
+  };
+}
+}
 #endif
 
 
@@ -2738,29 +2782,21 @@ evaluate(
 #endif
 
 
-#if 0
+#if ADD_TEST2
 namespace {
-auto
+Array
 evaluate(
-  std::remove_reference<
+  Atop<
     Atop<
-      Function<
-        Atop<
-          Function<
-            Atop<
-              Function<Plus>,
-              Operator<Reduce>
-            >
-          >,
-          Function<Iota>
-        >
-      >,
-      Array
-    >&
-  >::type,
+      Function<Times>,
+      Operator<Reduce>
+    >,
+    Array
+  >,
   Context&
 )
 {
+  assert(false);
 }
 }
 #endif
