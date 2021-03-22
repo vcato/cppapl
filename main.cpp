@@ -2482,34 +2482,6 @@ evaluate(Fork<A,B,C> arg, Context&)
 
 #if ADD_TEST2
 namespace {
-Array
-evaluate(
-  Function<
-    Fork<
-      Fork<
-        Atop<
-          Function<Times>,
-          Operator<Commute>
-        >,
-        Operator<Beside>,
-        Function<First>
-      >,
-      Function<Catenate>,
-      Function<Right>
-    >
-  >,
-  Array,
-  Context&
-)
-{
-  assert(false);
-}
-}
-#endif
-
-
-#if ADD_TEST2
-namespace {
 template <typename A, typename B>
 Atop<
   Atop<
@@ -2845,6 +2817,83 @@ evaluate(
 )
 {
   assert(false);
+}
+}
+#endif
+
+
+#if ADD_TEST2
+namespace {
+template <typename A>
+Array
+evaluate(
+  Atop<
+    Function<
+      Fork<
+        Fork<
+          Atop<
+            Function<Times>,
+            Operator<Commute>
+          >,
+          Operator<Beside>,
+          Function<First>
+        >,
+        Function<Catenate>,
+        Function<Right>
+      >
+    >,
+    Array
+  >,
+  Context&
+)
+{
+  assert(false);
+}
+}
+#endif
+
+
+#if ADD_TEST2
+namespace {
+Atop<
+  Atop<
+    Function<Times>,
+    Operator<Reduce>
+  >,
+  Array
+>
+join(
+  Function<Times> left,
+  Partial<
+    Operator<Reduce>,
+    Atop<
+      Function<
+        Fork<
+          Fork<
+            Atop<
+              Function<Times>,
+              Operator<Commute>
+            >,
+            Operator<Beside>,
+            Function<First>
+          >,
+          Function<Catenate>,
+          Function<Right>
+        >
+      >,
+      Array
+    >
+  > right,
+  Context& context
+)
+{
+  return {
+    {
+      std::move(left),
+      std::move(right.left)
+    },
+    evaluate(std::move(right.right), context)
+  };
 }
 }
 #endif
