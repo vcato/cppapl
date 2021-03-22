@@ -6,8 +6,6 @@
 #include "vectorio.hpp"
 
 #define ADD_TEST2 0
-#define CHANGE_REDUCE 0
-  // Change Atop<Function<A>,Operator<Reduce>> to a Function
 
 using std::cerr;
 using std::ostream;
@@ -1246,59 +1244,6 @@ Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
 
 
 namespace {
-Array
-evaluate(
-  Fork<
-    Array,
-    Function<Fork<Operator<Outer>, Operator<Product>, Function<Times> > >,
-    Array
-  > arg,
-  Context&
-)
-{
-  if (arg.left.shape().size() != 1) {
-    cerr << "arg.left: " << arg.left << "\n";
-    cerr << "arg.left.shape.size(): " << arg.left.shape().size() << "\n";
-    assert(false);
-  }
-
-  int n_rows = arg.left.shape()[0];
-
-  if (arg.right.shape().size() != 1) {
-    assert(false);
-  }
-
-  int n_cols = arg.right.shape()[0];
-
-  Array::Shape shape = { n_rows, n_cols };
-  Values values;
-
-  for (auto &x : arg.left.values()) {
-    if (!x.isNumber()) {
-      assert(false);
-    }
-  }
-
-  for (auto &x : arg.right.values()) {
-    if (!x.isNumber()) {
-      assert(false);
-    }
-  }
-
-  for (int i=0; i!=n_rows; ++i) {
-    for (int j=0; j!=n_cols; ++j) {
-      Number a = arg.left.values()[i].asNumber();
-      Number b = arg.right.values()[j].asNumber();
-      values.push_back(a * b);
-    }
-  }
-
-  return Array(std::move(shape), std::move(values));
-}
-}
-
-
-namespace {
 Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
 {
   if (isScalar(arg.left)) {
@@ -1401,11 +1346,7 @@ static Array
 evaluate(
   Fork<
     Array,
-#if CHANGE_REDUCE
-    Function<Atop<Function<Plus>, Operator<Reduce>>>,
-#else
     Atop<Function<Plus>, Operator<Reduce> >,
-#endif
     Array
   > arg,
   Context&
@@ -1432,14 +1373,67 @@ evaluate(
   Values values;
 
   for (int i=0; i!=m-(n-1); ++i) {
-#if CHANGE_REDUCE
-    values.push_back(reduce(arg.mid.body.left, arg.right, i, i+n));
-#else
     values.push_back(reduce(arg.mid.left, arg.right, i, i+n));
-#endif
   }
 
   return { {m-(n-1)}, std::move(values) };
+}
+}
+
+
+namespace {
+Array
+evaluate(
+  Fork<
+    Array,
+    Fork<
+      Operator<Outer>,
+      Operator<Product>,
+      Function<Times>
+    >,
+    Array
+  > arg,
+  Context&
+)
+{
+  if (arg.left.shape().size() != 1) {
+    cerr << "arg.left: " << arg.left << "\n";
+    cerr << "arg.left.shape.size(): " << arg.left.shape().size() << "\n";
+    assert(false);
+  }
+
+  int n_rows = arg.left.shape()[0];
+
+  if (arg.right.shape().size() != 1) {
+    assert(false);
+  }
+
+  int n_cols = arg.right.shape()[0];
+
+  Array::Shape shape = { n_rows, n_cols };
+  Values values;
+
+  for (auto &x : arg.left.values()) {
+    if (!x.isNumber()) {
+      assert(false);
+    }
+  }
+
+  for (auto &x : arg.right.values()) {
+    if (!x.isNumber()) {
+      assert(false);
+    }
+  }
+
+  for (int i=0; i!=n_rows; ++i) {
+    for (int j=0; j!=n_cols; ++j) {
+      Number a = arg.left.values()[i].asNumber();
+      Number b = arg.right.values()[j].asNumber();
+      values.push_back(a * b);
+    }
+  }
+
+  return Array(std::move(shape), std::move(values));
 }
 }
 
@@ -1521,11 +1515,7 @@ namespace {
 Array
 evaluate(
   Atop<
-#if CHANGE_REDUCE
-    Function<Atop<Function<Plus>, Operator<Reduce>>>,
-#else
     Atop< Function<Plus>, Operator<Reduce> >,
-#endif
     Array
   > arg,
   Context &
@@ -1536,11 +1526,7 @@ evaluate(
   if (right.shape().size() == 1) {
     int start_index = 0;
     int end_index = right.values().size();
-#if CHANGE_REDUCE
-    return reduce(arg.left.body.left, arg.right, start_index, end_index);
-#else
     return reduce(arg.left.left, arg.right, start_index, end_index);
-#endif
   }
 
   assert(false);
@@ -2074,115 +2060,11 @@ join(Keyword<RightArg> left, Atop<Function<T>, Array> right, Context &)
 
 
 namespace {
-Atop<
-#if CHANGE_REDUCE
-  Function<Atop<Function<Plus>, Operator<Reduce>>>,
-#else
-  Atop<Function<Plus>, Operator<Reduce>>,
-#endif
-  Array
->
-join(
-  Function<Plus> left,
-  Atop<
-    Partial<
-      Operator<Reduce>,
-      Function<Iota>
-    >,
-    Array
-  > right,
-  Context& context
-)
-{
-  using X1 = Atop<Function<Plus>, Operator<Reduce>>;
-  X1 x1 = { std::move(left), std::move(right.left.left) };
-#if CHANGE_REDUCE
-  using X2 = Function<X1>;
-  X2 x2 = { std::move(x1) };
-#endif
-
-  return {
-#if CHANGE_REDUCE
-    std::move(x2),
-#else
-    std::move(x1),
-#endif
-    evaluate(
-      atop(
-        std::move(right.left.right),
-        std::move(right.right)
-      ),
-      context
-    )
-  };
-}
-}
-
-
-namespace {
-Atop<Fork<Function<Plus>,Operator<Beside>,Function<Divide>>, Array>
-join(
-  Function<Plus> left,
-  Atop<
-    Partial<
-      Operator<Beside>,
-      Function<Divide>
-    >,
-    Array
-  > right,
-  Context&
-)
-{
-  return {
-    {
-      std::move(left),
-      std::move(right.left.left),
-      std::move(right.left.right)
-    },
-    std::move(right.right)
-  };
-}
-}
-
-
-namespace {
 template <typename T, typename U>
-Atop<Partial<Operator<U>,Function<T>>, Array>
-join(Operator<U>, Atop<Function<T>,Array> right, Context &)
+Partial<Operator<U>, Atop<Function<T>,Array>>
+join(Operator<U> left, Atop<Function<T>,Array> right, Context &)
 {
-  return {{},std::move(right.right)};
-}
-}
-
-
-namespace {
-Atop<Fork<Function<Plus>, Operator<Product>, Function<Times>>,Array>
-join(
-  Function<Plus>,
-  Atop<Partial<Operator<Product>, Function<Times> >, Array> right,
-  Context &
-)
-{
-  return {{},std::move(right.right)};
-}
-}
-
-
-namespace {
-Atop<
-  Function<Fork<Operator<Outer>, Operator<Product>, Function<Times>>>,
-  Array
->
-join(
-  Operator<Outer> /*left*/,
-  Atop<Partial<Operator<Product>, Function<Times> >, Array> right,
-  Context&
-)
-{
-  return {
-    {},
-    std::move(right.right)
-  };
+  return { std::move(left), std::move(right) };
 }
 }
 
@@ -2209,11 +2091,7 @@ Partial<Operator<T>,Function<U>> join(Operator<T>, Function<U>, Context &)
 namespace {
 template <typename T, typename U, typename V>
 Atop<
-#if CHANGE_REDUCE
-  Function<Atop<Function<T>,Operator<V>>>,
-#else
   Atop<Function<T>,Operator<V>>,
-#endif
   Function<U>
 >
 join(Function<T>, Partial<Operator<V>, Function<U>>, Context &)
@@ -2678,6 +2556,151 @@ join(
 #endif
 
 
+namespace {
+Atop<
+  Atop<Function<Plus>,Operator<Reduce>>,
+  Array
+>
+join(
+  Function<Plus> left,
+  Partial<Operator<Reduce>, Atop<Function<Iota>, Array> > right,
+  Context& context
+)
+{
+  return {
+    {
+      std::move(left),
+      std::move(right.left)
+    },
+    evaluate(std::move(right.right), context)
+  };
+}
+}
+
+
+namespace {
+Atop<
+  Fork<
+    Function<Plus>,
+    Operator<Product>,
+    Function<Times>
+  >,
+  Array
+>
+join(
+  Function<Plus> left,
+  Partial<
+    Operator<Product>,
+    Atop<
+      Function<Times>,
+      Array
+    >
+  > right,
+  Context&
+)
+{
+  return {
+    {
+      std::move(left),
+      std::move(right.left),
+      std::move(right.right.left)
+    },
+    std::move(right.right.right)
+  };
+}
+}
+
+
+namespace {
+Atop<
+  Fork<
+    Function<Plus>,
+    Operator<Beside>,
+    Function<Divide>
+  >,
+  Array
+>
+join(
+  Function<Plus> left,
+  Partial<
+    Operator<Beside>,
+    Atop<
+      Function<Divide>,
+      Array
+    >
+  > right,
+  Context&
+)
+{
+  return {
+    {
+      std::move(left),
+      std::move(right.left),
+      std::move(right.right.left)
+    },
+    std::move(right.right.right)
+  };
+}
+}
+
+
+namespace {
+Atop<
+  Fork<
+    Operator<Outer>,
+    Operator<Product>,
+    Function<Times>
+  >,
+  Array
+>
+join(
+  Operator<Outer> left,
+  Partial<
+    Operator<Product>,
+    Atop<
+      Function<Times>,
+      Array
+    >
+  > right,
+  Context&
+)
+{
+  return {
+    {
+      std::move(left),
+      std::move(right.left),
+      std::move(right.right.left)
+    },
+    std::move(right.right.right)
+  };
+}
+}
+
+
+namespace {
+Atop< Function<MemberOf>, Array >
+join(
+  Function<MemberOf> left,
+  Fork<
+    Values,
+    Fork<
+      Operator<Outer>,
+      Operator<Product>,
+      Function<Times>
+    >,
+    Array
+  > right,
+  Context& context
+)
+{
+  return {
+    std::move(left),
+    evaluate(right,context)
+  };
+}
+}
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
@@ -2765,21 +2788,6 @@ Array evaluate(Atop<Function<Where>, Array> arg, Context&)
   assert(false);
 }
 }
-
-
-#if CHANGE_REDUCE
-namespace {
-template <typename A, typename B>
-Function<Atop<Function<A>, Function<B>>>
-evaluate(
-  Atop<Function<A>,Function<B>> arg,
-  Context &
-)
-{
-  return { std::move(arg) };
-}
-}
-#endif
 
 
 #if ADD_TEST2
@@ -2939,20 +2947,12 @@ auto join(T left, Expr<F> right, Context &context)
 
 namespace {
 Atop<
-#if CHANGE_REDUCE
-  Function<Atop<Function<Plus>,Operator<Reduce>>>,
-#else
   Atop<Function<Plus>,Operator<Reduce>>,
-#endif
   Array
 >
 join(
   Atop<
-#if CHANGE_REDUCE
-    Function<Atop<Function<Plus>, Operator<Reduce>>>,
-#else
     Atop<Function<Plus>, Operator<Reduce>>,
-#endif
     Function<Iota>
   > left,
   Array right,
