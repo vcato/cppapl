@@ -2060,16 +2060,6 @@ join(Keyword<RightArg> left, Atop<Function<T>, Array> right, Context &)
 
 
 namespace {
-template <typename T, typename U>
-Partial<Operator<U>, Atop<Function<T>,Array>>
-join(Operator<U> left, Atop<Function<T>,Array> right, Context &)
-{
-  return { std::move(left), std::move(right) };
-}
-}
-
-
-namespace {
 template <typename T>
 Partial<Operator<T>,Array>
 join(Operator<T> left, Values right, Context &)
@@ -2558,28 +2548,6 @@ join(
 
 namespace {
 Atop<
-  Atop<Function<Plus>,Operator<Reduce>>,
-  Array
->
-join(
-  Function<Plus> left,
-  Partial<Operator<Reduce>, Atop<Function<Iota>, Array> > right,
-  Context& context
-)
-{
-  return {
-    {
-      std::move(left),
-      std::move(right.left)
-    },
-    evaluate(std::move(right.right), context)
-  };
-}
-}
-
-
-namespace {
-Atop<
   Fork<
     Function<Plus>,
     Operator<Product>,
@@ -2696,6 +2664,78 @@ join(
   return {
     std::move(left),
     evaluate(right,context)
+  };
+}
+}
+
+
+namespace {
+Partial<
+  Operator<Reduce>,
+  Array
+>
+join(
+  Operator<Reduce> left,
+  Atop<
+    Function<Iota>,
+    Array
+  > right,
+  Context& context
+)
+{
+  return {
+    std::move(left),
+    evaluate(std::move(right), context)
+  };
+}
+}
+
+
+namespace {
+Partial<
+  Operator<Product>,
+  Atop<
+    Function<Times>,
+    Array
+  >
+>
+join(
+  Operator<Product> left,
+  Atop<
+    Function<Times>,
+    Array
+  > right,
+  Context&
+)
+{
+  return {
+    std::move(left),
+    std::move(right)
+  };
+}
+}
+
+
+namespace {
+Partial<
+  Operator<Beside>,
+  Atop<
+    Function<Divide>,
+    Array
+  >
+>
+join(
+  Operator<Beside> left,
+  Atop<
+    Function<Divide>,
+    Array
+  > right,
+  Context&
+)
+{
+  return {
+    std::move(left),
+    std::move(right)
   };
 }
 }
