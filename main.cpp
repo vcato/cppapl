@@ -1035,19 +1035,32 @@ Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
 }
 
 
+static void appendTo(Values &values, Values &&new_values)
+{
+  for (auto &x : new_values) {
+    values.push_back(std::move(x));
+  }
+}
+
+
 namespace {
 Array evaluate(Fork<Array, Function<Catenate>, Array> arg, Context &)
 {
   if (isVector(arg.left) && isVector(arg.right)) {
     Values values = std::move(arg.left).values();
-
-    for (auto &x : arg.right.values()) {
-      values.push_back(std::move(x));
-    }
-
+    appendTo(values, std::move(arg.right.values()));
     return makeArrayFromValues(std::move(values));
   }
 
+  if (isScalar(arg.left) && isVector(arg.right)) {
+    Values values;
+    values.push_back(std::move(arg.left));
+    appendTo(values, std::move(arg.right.values()));
+    return makeArrayFromValues(std::move(values));
+  }
+
+  cerr << "isVector(arg.left): " << isVector(arg.left) << "\n";
+  cerr << "isVector(arg.right): " << isVector(arg.right) << "\n";
   assert(false);
 }
 }
@@ -1534,21 +1547,6 @@ evaluate(
 }
 
 
-template <typename T>
-static Array
-evaluate(
-  Atop<
-    Atop< Function<T>, Operator<Commute> >,
-    Array
-  > arg,
-  Context& context
-)
-{
-  return
-    evaluate(fork(Array(arg.right), arg.left.left, Array(arg.right)), context);
-}
-
-
 namespace {
 template <typename T>
 Array
@@ -1889,11 +1887,101 @@ join(Operator<T> left, Array right, Context &)
 namespace {
 template <typename T, typename U>
 Partial<Operator<T>,Array>
-join(Operator<T> left, Fork<Values, Function<U>, Array> right, Context &context)
+join(
+  Operator<T> left,
+  Fork<Values, Function<U>, Array> right,
+  Context &context
+)
 {
   return { std::move(left), evaluate(std::move(right), context) };
 }
 }
+
+
+namespace {
+template <typename T>
+static Array
+evaluate(
+  Atop<
+    Atop< Function<T>, Operator<Commute> >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  return
+    evaluate(fork(Array(arg.right), arg.left.left, Array(arg.right)), context);
+}
+}
+
+
+#if ADD_TEST2
+namespace {
+template <typename F, typename G, typename H>
+Array
+evaluate(
+  Atop<
+    Fork<
+      Atop<F,G>,
+      Operator<Beside>,
+      Function<H>
+    >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  auto a = std::move(arg.right);
+  auto fg = std::move(arg.left.left);
+  auto h = std::move(arg.left.right);
+  auto b = evaluate(atop(h, Array(a)), context);
+  return evaluate(atop(fg, std::move(b)), context);
+}
+}
+#endif
+
+
+#if ADD_TEST2
+namespace {
+template <typename F, typename G, typename H>
+Array
+evaluate(
+  Atop< Function<Fork<F,G,H>>, Array > arg,
+  Context& context
+)
+{
+  auto f = std::move(arg.left.body.left);
+  auto g = std::move(arg.left.body.mid);
+  auto h = std::move(arg.left.body.right);
+  auto right_arg = std::move(arg.right);
+  auto a = evaluate(atop(f,Array(right_arg)),context);
+  auto b = evaluate(atop(h,std::move(right_arg)),context);
+  return evaluate(fork(std::move(a), std::move(g), std::move(b)), context);
+}
+}
+#endif
+
+
+#if ADD_TEST2
+namespace {
+Array evaluate(Atop<Function<Right>, Array> arg, Context&)
+{
+  return std::move(arg.right);
+}
+}
+#endif
+
+
+#if ADD_TEST2
+namespace {
+template <typename T, typename U>
+Partial<Operator<T>,Array>
+join(Operator<T> left, Atop<Function<U>, Array> right, Context &context)
+{
+  return { std::move(left), evaluate(std::move(right), context) };
+}
+}
+#endif
 
 
 namespace {
@@ -1957,7 +2045,7 @@ namespace {
 Array
 evaluate(
   Atop<
-    Fork< vector<Array>, Operator<Beside>, Function<Reshape> >,
+    Fork< Values, Operator<Beside>, Function<Reshape> >,
     Array
   > arg,
   Context& context
@@ -2353,9 +2441,9 @@ join(
 
 
 namespace {
-Fork<vector<Var>, Keyword<Assign>, Array>
+Fork<Vars, Keyword<Assign>, Array>
 join(
-  vector<Var> left,
+  Vars left,
   Partial< Keyword<Assign>, Array > right,
   Context&
 )
@@ -2848,52 +2936,6 @@ evaluate(
 )
 {
   assert(false);
-}
-}
-#endif
-
-
-#if ADD_TEST2
-namespace {
-Atop<
-  Atop<
-    Function<Times>,
-    Operator<Reduce>
-  >,
-  Array
->
-join(
-  Function<Times> left,
-  Partial<
-    Operator<Reduce>,
-    Atop<
-      Function<
-        Fork<
-          Fork<
-            Atop<
-              Function<Times>,
-              Operator<Commute>
-            >,
-            Operator<Beside>,
-            Function<First>
-          >,
-          Function<Catenate>,
-          Function<Right>
-        >
-      >,
-      Array
-    >
-  > right,
-  Context& context
-)
-{
-  return {
-    {
-      std::move(left),
-      std::move(right.left)
-    },
-    evaluate(std::move(right.right), context)
-  };
 }
 }
 #endif
@@ -3414,6 +3456,11 @@ static void testGrille()
 static void test3000()
 {
   Placeholder _;
+
+  // a = reverse(iota(5)): 5 4 3 2 1
+  // b = commute(times)(first(a)): 25
+  // c = catenate(b,a): 25 5 4 3 2 1
+  // d = reduce(times)(c): 3000
 
   assert(
     _(_.times, _.reduce,
