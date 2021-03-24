@@ -1331,29 +1331,35 @@ Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
 }
 
 
-static Array
-reduce(Function<Plus>, const Array &right, int begin_index, int end_index)
+static Number identityOf(Function<Plus>)
 {
-  Number total = 0;
-
-  for (int i = begin_index; i!=end_index; ++i) {
-    auto &x = right.values()[i];
-
-    if (!x.isNumber()) {
-      assert(false);
-    }
-
-    total += x.asNumber();
-  }
-
-  return total;
+  return 0;
 }
 
 
-static Array
-reduce(Function<Times>, const Array &right, int begin_index, int end_index)
+static Number identityOf(Function<Times>)
 {
-  Number total = 1;
+  return 1;
+}
+
+
+static void reduceOne(Number &total, Function<Plus>, Number next)
+{
+  total += next;
+}
+
+
+static void reduceOne(Number &total, Function<Times>, Number next)
+{
+  total *= next;
+}
+
+
+template <typename F>
+static Array
+reduce(Function<F> f, const Array &right, int begin_index, int end_index)
+{
+  Number total = identityOf(f);
 
   for (int i = begin_index; i!=end_index; ++i) {
     auto &x = right.values()[i];
@@ -1362,7 +1368,7 @@ reduce(Function<Times>, const Array &right, int begin_index, int end_index)
       assert(false);
     }
 
-    total *= x.asNumber();
+    reduceOne(total, f, x.asNumber());
   }
 
   return total;
