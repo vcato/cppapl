@@ -1343,15 +1343,33 @@ static Number identityOf(Function<Times>)
 }
 
 
-static void reduceOne(Number &total, Function<Plus>, Number next)
+auto makeBinary(Function<Plus>)
 {
-  total += next;
+  return [](Number a, Number b) { return a + b; };
 }
 
 
-static void reduceOne(Number &total, Function<Times>, Number next)
+auto makeBinary(Function<Minus>)
 {
-  total *= next;
+  return [](Number a, Number b) { return a - b; };
+}
+
+
+auto makeBinary(Function<Times>)
+{
+  return [](Number a, Number b) { return a * b; };
+}
+
+
+auto makeBinary(Function<Divide>)
+{
+  return [](Number a, Number b) { return a / b; };
+}
+
+
+auto makeBinary(Function<Power>)
+{
+  return [](Number a, Number b) { return std::pow(a,b); };
 }
 
 
@@ -1368,7 +1386,7 @@ reduce(Function<F> f, const Array &right, int begin_index, int end_index)
       assert(false);
     }
 
-    reduceOne(total, f, x.asNumber());
+    total = makeBinary(f)(total, x.asNumber());
   }
 
   return total;
@@ -1501,46 +1519,11 @@ Array evaluate(Atop<Values,T> arg, Context &context)
 
 
 namespace {
-Array evaluate(Fork<Array,Function<Plus>,Array> arg, Context &)
+template <typename F>
+Array evaluate(Fork<Array,Function<F>,Array> arg, Context &)
 {
-  auto f = [](Number a, Number b) { return a + b; };
+  auto f = makeBinary(std::move(arg.mid));
   return evaluateNumberBinary(std::move(arg), f);
-}
-}
-
-
-namespace {
-Array evaluate(Fork<Array,Function<Minus>,Array> arg, Context &)
-{
-  auto f = [](Number a, Number b) { return a - b; };
-  return evaluateNumberBinary(std::move(arg), f);
-}
-}
-
-
-namespace {
-Array evaluate(Fork<Array,Function<Times>,Array> arg, Context &)
-{
-  auto f = [](Number a, Number b) { return a * b; };
-  return evaluateNumberBinary(std::move(arg), f);
-}
-}
-
-
-namespace {
-Array evaluate(Fork<Array, Function<Divide>, Array> arg, Context&)
-{
-  auto f = [](Number a, Number b) { return a / b; };
-  return evaluateNumberBinary(arg, f);
-}
-}
-
-
-namespace {
-Array evaluate(Fork<Array, Function<Power>, Array> arg, Context&)
-{
-  auto f = [](Number a, Number b) { return std::pow(a,b); };
-  return evaluateNumberBinary(arg, f);
 }
 }
 
