@@ -5,8 +5,6 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
-#define ADD_TEST2 0
-
 using std::cerr;
 using std::ostream;
 using Number = double;
@@ -1333,7 +1331,6 @@ Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
 }
 
 
-namespace {
 static Array
 reduce(Function<Plus>, const Array &right, int begin_index, int end_index)
 {
@@ -1351,6 +1348,24 @@ reduce(Function<Plus>, const Array &right, int begin_index, int end_index)
 
   return total;
 }
+
+
+static Array
+reduce(Function<Times>, const Array &right, int begin_index, int end_index)
+{
+  Number total = 1;
+
+  for (int i = begin_index; i!=end_index; ++i) {
+    auto &x = right.values()[i];
+
+    if (!x.isNumber()) {
+      assert(false);
+    }
+
+    total *= x.asNumber();
+  }
+
+  return total;
 }
 
 
@@ -1525,10 +1540,11 @@ Array evaluate(Fork<Array, Function<Power>, Array> arg, Context&)
 
 
 namespace {
+template <typename F>
 Array
 evaluate(
   Atop<
-    Atop< Function<Plus>, Operator<Reduce> >,
+    Atop< Function<F>, Operator<Reduce> >,
     Array
   > arg,
   Context &
@@ -1915,7 +1931,6 @@ evaluate(
 }
 
 
-#if ADD_TEST2
 namespace {
 template <typename F, typename G, typename H>
 Array
@@ -1938,10 +1953,8 @@ evaluate(
   return evaluate(atop(fg, std::move(b)), context);
 }
 }
-#endif
 
 
-#if ADD_TEST2
 namespace {
 template <typename F, typename G, typename H>
 Array
@@ -1959,20 +1972,16 @@ evaluate(
   return evaluate(fork(std::move(a), std::move(g), std::move(b)), context);
 }
 }
-#endif
 
 
-#if ADD_TEST2
 namespace {
 Array evaluate(Atop<Function<Right>, Array> arg, Context&)
 {
   return std::move(arg.right);
 }
 }
-#endif
 
 
-#if ADD_TEST2
 namespace {
 template <typename T, typename U>
 Partial<Operator<T>,Array>
@@ -1981,7 +1990,6 @@ join(Operator<T> left, Atop<Function<U>, Array> right, Context &context)
   return { std::move(left), evaluate(std::move(right), context) };
 }
 }
-#endif
 
 
 namespace {
@@ -2484,16 +2492,13 @@ static T combine(Context &, T arg)
 }
 
 
-#if ADD_TEST2
 static Atop<Function<Catenate>, Function<Right>>
 join(Function<Catenate> left, Function<Right> right, Context&)
 {
   return { std::move(left), std::move(right) };
 }
-#endif
 
 
-#if ADD_TEST2
 static Fork<Function<First>, Function<Catenate>, Function<Right>>
 join(
   Function<First> left,
@@ -2503,19 +2508,15 @@ join(
 {
   return { std::move(left), std::move(right.left), std::move(right.right) };
 }
-#endif
 
 
-#if ADD_TEST2
 template <typename T, typename U>
 static Partial<Operator<T>, U> join(Operator<T> left, U right, Context &)
 {
   return { std::move(left), std::move(right) };
 }
-#endif
 
 
-#if ADD_TEST2
 namespace {
 Fork<
   Fork<
@@ -2553,10 +2554,8 @@ join(
   };
 }
 }
-#endif
 
 
-#if ADD_TEST2
 namespace {
 template <typename A, typename B, typename C>
 Function<Fork<A,B,C>>
@@ -2565,10 +2564,8 @@ evaluate(Fork<A,B,C> arg, Context&)
   return { std::move(arg) };
 }
 }
-#endif
 
 
-#if ADD_TEST2
 namespace {
 template <typename A, typename B>
 Atop<
@@ -2603,7 +2600,6 @@ join(
   };
 }
 }
-#endif
 
 
 namespace {
@@ -2888,57 +2884,6 @@ Array evaluate(Atop<Function<Where>, Array> arg, Context&)
   assert(false);
 }
 }
-
-
-#if ADD_TEST2
-namespace {
-Array
-evaluate(
-  Atop<
-    Atop<
-      Function<Times>,
-      Operator<Reduce>
-    >,
-    Array
-  >,
-  Context&
-)
-{
-  assert(false);
-}
-}
-#endif
-
-
-#if ADD_TEST2
-namespace {
-template <typename A>
-Array
-evaluate(
-  Atop<
-    Function<
-      Fork<
-        Fork<
-          Atop<
-            Function<Times>,
-            Operator<Commute>
-          >,
-          Operator<Beside>,
-          Function<First>
-        >,
-        Function<Catenate>,
-        Function<Right>
-      >
-    >,
-    Array
-  >,
-  Context&
-)
-{
-  assert(false);
-}
-}
-#endif
 
 
 template <typename...Args>
@@ -3452,7 +3397,6 @@ static void testGrille()
 }
 
 
-#if ADD_TEST2
 static void test3000()
 {
   Placeholder _;
@@ -3469,7 +3413,6 @@ static void test3000()
     ) == 3000
   );
 }
-#endif
 
 
 int main()
@@ -3479,7 +3422,5 @@ int main()
   testExamples();
   testCircle();
   testGrille();
-#if ADD_TEST2
   test3000();
-#endif
 }
