@@ -5,6 +5,8 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
+#define ADD_TEST 0
+
 using std::cerr;
 using std::ostream;
 using Number = double;
@@ -455,6 +457,9 @@ struct Reshape {};
 struct First {};
 struct Each {};
 struct Equal {};
+#if ADD_TEST
+struct NotEqual {};
+#endif
 struct Plus {};
 struct Minus {};
 struct Times {};
@@ -471,6 +476,9 @@ struct Roll {};
 struct Right {};
 struct Replicate {};
 struct Enclose {};
+#if ADD_TEST
+struct Partition {};
+#endif
 struct GradeUp {};
 struct MemberOf {};
 struct Not {};
@@ -684,6 +692,36 @@ replicateInto(
     addNCopiesTo(result_values, *maybe_count, right_values[i]);
   }
 }
+
+
+#if 0
+evaluateNumberBinary(
+  Fork<Array, T, Array>,
+  const G&
+)::<
+  lambda(
+    const Array&,
+    const Array&
+  )
+> [
+  with T = Function<
+    Fork<
+      Function<NotEqual>,
+      Function<Partition>,
+      Function<Right>
+    >
+  >
+  G = makeBinary(
+    Function<
+      Fork<
+        Function<NotEqual>,
+        Function<Partition>,
+        Function<Right>
+      >
+    >
+  )::<lambda(Number, Number)>
+]
+#endif
 
 
 template <typename T, typename G>
@@ -1518,12 +1556,78 @@ Array evaluate(Atop<Values,T> arg, Context &context)
 }
 
 
+#if ADD_TEST
+auto
+makeBinary(
+  Function<
+    Fork<
+      Function<NotEqual>,
+      Function<Partition>,
+      Function<Right>
+    >
+  >
+)
+{
+  return [](Number, Number) -> Number { assert(false); return 0; };
+}
+#endif
+
+
+namespace {
+template <typename F>
+Array evaluateNumberFork(Fork<Array,Function<F>,Array> arg)
+{
+  return evaluateNumberBinary(std::move(arg), makeBinary(std::move(arg.mid)));
+}
+}
+
+
+namespace {
+Array evaluate(Fork<Array,Function<Plus>,Array> arg, Context &)
+{
+  return evaluateNumberFork(arg);
+}
+}
+
+
+namespace {
+Array evaluate(Fork<Array,Function<Minus>,Array> arg, Context &)
+{
+  return evaluateNumberFork(arg);
+}
+}
+
+
+namespace {
+Array evaluate(Fork<Array,Function<Times>,Array> arg, Context &)
+{
+  return evaluateNumberFork(arg);
+}
+}
+
+
+namespace {
+Array evaluate(Fork<Array,Function<Divide>,Array> arg, Context &)
+{
+  return evaluateNumberFork(arg);
+}
+}
+
+
+namespace {
+Array evaluate(Fork<Array,Function<Power>,Array> arg, Context &)
+{
+  return evaluateNumberFork(arg);
+}
+}
+
+
 namespace {
 template <typename F>
 Array evaluate(Fork<Array,Function<F>,Array> arg, Context &)
 {
   auto f = makeBinary(std::move(arg.mid));
-  return evaluateNumberBinary(std::move(arg), f);
+  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
 }
 }
 
@@ -2866,6 +2970,18 @@ static T combine(Context &, T arg)
 }
 
 
+#if ADD_TEST
+namespace {
+template <typename F, typename G>
+Atop<Function<F>,Function<G>>
+join(Function<F> left, Function<G> right, Context&)
+{
+  return { std::move(left), std::move(right) };
+}
+}
+#endif
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
@@ -2873,6 +2989,22 @@ static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
   auto left = evaluate(std::move(arg1), context);
   return join(std::move(left), std::move(right), context);
 }
+
+
+#if ADD_TEST
+namespace {
+template <typename F, typename G, typename H>
+Fork<Function<F>, Function<G>, Function<H>>
+join(
+  Function<F> left,
+  Atop<Function<G>, Function<H>> right,
+  Context&
+)
+{
+  return { std::move(left), std::move(right.left), std::move(right.right) };
+}
+}
+#endif
 
 
 template <typename...Args>
@@ -3049,6 +3181,9 @@ struct Placeholder {
   static constexpr Function<Reshape>   reshape = {};
   static constexpr Function<First>     first = {};
   static constexpr Function<Equal>     equal = {};
+#if ADD_TEST
+  static constexpr Function<NotEqual>  not_equal = {};
+#endif
   static constexpr Function<Plus>      plus = {};
   static constexpr Function<Minus>     minus = {};
   static constexpr Function<Times>     times = {};
@@ -3062,6 +3197,9 @@ struct Placeholder {
   static constexpr Function<Not>       isnot = {};
   static constexpr Function<Drop>      drop = {};
   static constexpr Function<Enclose>   enclose = {};
+#if ADD_TEST
+  static constexpr Function<Partition> partition = {};
+#endif
   static constexpr Function<GradeUp>   grade_up = {};
   static constexpr Function<Where>     where = {};
   static constexpr Function<Reverse>   reverse = {};
@@ -3098,6 +3236,9 @@ constexpr Function<Shape>     Placeholder::shape;
 constexpr Function<Reshape>   Placeholder::reshape;
 constexpr Function<First>     Placeholder::first;
 constexpr Function<Equal>     Placeholder::equal;
+#if ADD_TEST
+constexpr Function<NotEqual>  Placeholder::not_equal;
+#endif
 constexpr Function<Plus>      Placeholder::plus;
 constexpr Function<Minus>     Placeholder::minus;
 constexpr Function<Times>     Placeholder::times;
@@ -3111,6 +3252,9 @@ constexpr Function<Drop>      Placeholder::drop;
 constexpr Function<MemberOf>  Placeholder::member_of;
 constexpr Function<Not>       Placeholder::isnot;
 constexpr Function<Enclose>   Placeholder::enclose;
+#if ADD_TEST
+constexpr Function<Partition> Placeholder::partition;
+#endif
 constexpr Function<GradeUp>   Placeholder::grade_up;
 constexpr Function<Where>     Placeholder::where;
 constexpr Function<Reverse>   Placeholder::reverse;
@@ -3313,6 +3457,15 @@ static void testExamples()
 
     assert(str(grid) == expected);
   }
+
+#if ADD_TEST
+  {
+    Array result =
+      _(' ', _(_.not_equal, _.partition, _.right), " many a  time");
+
+    assert(result == _("many","a","time"));
+  }
+#endif
 }
 
 
