@@ -496,6 +496,12 @@ static bool isScalar(const Array &a)
 }
 
 
+static bool isVector(const Array &arg)
+{
+  return arg.isNonScalar() && arg.shape().size() == 1;
+}
+
+
 template <typename A, typename B>
 static Atop<A,B> atop(A a, B b)
 {
@@ -723,12 +729,6 @@ static bool isElementOf(const Array &a, const Array &b)
 }
 
 
-static bool isVector(const Array &arg)
-{
-  return arg.isNonScalar() && arg.shape().size() == 1;
-}
-
-
 static Optional<Array> maybeElement(const Array &a, const Array &index_array)
 {
   if (Optional<int> maybe_index = maybeInteger(index_array)) {
@@ -799,6 +799,100 @@ static bool isNot(const Array &a)
   }
 
   return !*maybe_x;
+}
+
+
+static void appendTo(Values &values, Values &&new_values)
+{
+  for (auto &x : new_values) {
+    values.push_back(std::move(x));
+  }
+}
+
+
+static Number identityOf(Function<Plus>)
+{
+  return 0;
+}
+
+
+static Number identityOf(Function<Times>)
+{
+  return 1;
+}
+
+
+auto makeBinary(Function<Plus>)
+{
+  return [](Number a, Number b) { return a + b; };
+}
+
+
+auto makeBinary(Function<Minus>)
+{
+  return [](Number a, Number b) { return a - b; };
+}
+
+
+auto makeBinary(Function<Times>)
+{
+  return [](Number a, Number b) { return a * b; };
+}
+
+
+auto makeBinary(Function<Divide>)
+{
+  return [](Number a, Number b) { return a / b; };
+}
+
+
+auto makeBinary(Function<Power>)
+{
+  return [](Number a, Number b) { return std::pow(a,b); };
+}
+
+
+template <typename F>
+static Array
+reduce(Function<F> f, const Array &right, int begin_index, int end_index)
+{
+  Number total = identityOf(f);
+
+  for (int i = begin_index; i!=end_index; ++i) {
+    auto &x = right.values()[i];
+
+    if (!x.isNumber()) {
+      assert(false);
+    }
+
+    total = makeBinary(f)(total, x.asNumber());
+  }
+
+  return total;
+}
+
+
+namespace {
+Array elements(const Array &a, const Array &indices)
+{
+  int n = indices.shape()[0];
+  Values values;
+
+  for (int i=0; i!=n; ++i) {
+    const Array &index = indices.values()[i];
+
+    Optional<Array> maybe_element = maybeElement(a, index);
+
+    if (maybe_element) {
+      values.push_back(std::move(*maybe_element));
+    }
+    else {
+      assert(false);
+    }
+  }
+
+  return Array({n}, std::move(values));
+}
 }
 
 
@@ -1030,14 +1124,6 @@ Array evaluate(Atop<Function<Roll>,Array> arg, Context &context)
   cerr << "arg.right: " << arg.right << "\n";
   assert(false);
 }
-}
-
-
-static void appendTo(Values &values, Values &&new_values)
-{
-  for (auto &x : new_values) {
-    values.push_back(std::move(x));
-  }
 }
 
 
@@ -1275,30 +1361,6 @@ Array evaluate(Fork<Array,Function<MemberOf>,Array> arg, Context &)
 
 
 namespace {
-Array elements(const Array &a, const Array &indices)
-{
-  int n = indices.shape()[0];
-  Values values;
-
-  for (int i=0; i!=n; ++i) {
-    const Array &index = indices.values()[i];
-
-    Optional<Array> maybe_element = maybeElement(a, index);
-
-    if (maybe_element) {
-      values.push_back(std::move(*maybe_element));
-    }
-    else {
-      assert(false);
-    }
-  }
-
-  return Array({n}, std::move(values));
-}
-}
-
-
-namespace {
 Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
 {
   Array &right = arg.right.arg;
@@ -1328,68 +1390,6 @@ Array evaluate(Atop<Array,Index<Array>> arg, Context &/*context*/)
   cerr << "right: " << right << "\n";
   assert(false);
 }
-}
-
-
-static Number identityOf(Function<Plus>)
-{
-  return 0;
-}
-
-
-static Number identityOf(Function<Times>)
-{
-  return 1;
-}
-
-
-auto makeBinary(Function<Plus>)
-{
-  return [](Number a, Number b) { return a + b; };
-}
-
-
-auto makeBinary(Function<Minus>)
-{
-  return [](Number a, Number b) { return a - b; };
-}
-
-
-auto makeBinary(Function<Times>)
-{
-  return [](Number a, Number b) { return a * b; };
-}
-
-
-auto makeBinary(Function<Divide>)
-{
-  return [](Number a, Number b) { return a / b; };
-}
-
-
-auto makeBinary(Function<Power>)
-{
-  return [](Number a, Number b) { return std::pow(a,b); };
-}
-
-
-template <typename F>
-static Array
-reduce(Function<F> f, const Array &right, int begin_index, int end_index)
-{
-  Number total = identityOf(f);
-
-  for (int i = begin_index; i!=end_index; ++i) {
-    auto &x = right.values()[i];
-
-    if (!x.isNumber()) {
-      assert(false);
-    }
-
-    total = makeBinary(f)(total, x.asNumber());
-  }
-
-  return total;
 }
 
 
@@ -1837,28 +1837,6 @@ struct MakeRValue<const char (&)[n]> {
     return makeArrayFromString(arg);
   }
 };
-
-
-static Array combine(Context &, int arg)
-{
-  return Array(arg);
-}
-
-
-static Array combine(Context &, Number arg)
-{
-  return Array(arg);
-}
-
-
-static Array combine(Context &context, Keyword<RightArg>)
-{
-  if (!context.right_arg_ptr) {
-    assert(false);
-  }
-
-  return Array(*context.right_arg_ptr);
-}
 
 
 namespace {
@@ -2474,13 +2452,6 @@ join(
 }
 
 
-template <typename T>
-static T combine(Context &, T arg)
-{
-  return arg;
-}
-
-
 static Atop<Function<Catenate>, Function<Right>>
 join(Function<Catenate> left, Function<Right> right, Context&)
 {
@@ -2786,15 +2757,6 @@ join(
 }
 
 
-template <typename Arg1, typename Arg2, typename ...Args>
-static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
-{
-  auto right = combine(context, std::move(arg2), std::move(args)...);
-  auto left = evaluate(std::move(arg1), context);
-  return join(std::move(left), std::move(right), context);
-}
-
-
 namespace {
 Array
 evaluate(Fork<vector<Var>, Keyword<Assign>, Array> arg, Context& context)
@@ -2875,6 +2837,44 @@ Array evaluate(Atop<Function<Where>, Array> arg, Context&)
 }
 
 
+static Array combine(Context &, int arg)
+{
+  return Array(arg);
+}
+
+
+static Array combine(Context &, Number arg)
+{
+  return Array(arg);
+}
+
+
+static Array combine(Context &context, Keyword<RightArg>)
+{
+  if (!context.right_arg_ptr) {
+    assert(false);
+  }
+
+  return Array(*context.right_arg_ptr);
+}
+
+
+template <typename T>
+static T combine(Context &, T arg)
+{
+  return arg;
+}
+
+
+template <typename Arg1, typename Arg2, typename ...Args>
+static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
+{
+  auto right = combine(context, std::move(arg2), std::move(args)...);
+  auto left = evaluate(std::move(arg1), context);
+  return join(std::move(left), std::move(right), context);
+}
+
+
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
@@ -2926,19 +2926,6 @@ auto evaluate(Dfn<T> arg, Context&)
 }
 
 
-static Array makeArray(Array a)
-{
-  return a;
-}
-
-
-static inline Array makeArray(Var a)
-{
-  assert(a.ptr);
-  return Array(*a.ptr);
-}
-
-
 template <typename F>
 static auto evaluateExpr(Expr<F> &&expr)
 {
@@ -2962,7 +2949,7 @@ template <typename T>
 Atop<Array,Index<Array>>
 join(Var left, Index<Expr<T>> right, Context &context)
 {
-  Array i = makeArray(evaluateExpr(std::move(right.arg)));
+  Array i = evaluateExpr(std::move(right.arg));
   return join(Array(*left.ptr), Index<Array>{std::move(i)}, context);
 }
 }
