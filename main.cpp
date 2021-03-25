@@ -6,6 +6,8 @@
 #include "vectorio.hpp"
 
 #define ADD_TEST 0
+#define REFACTOR 0
+
 
 using std::cerr;
 using std::ostream;
@@ -692,36 +694,6 @@ replicateInto(
     addNCopiesTo(result_values, *maybe_count, right_values[i]);
   }
 }
-
-
-#if 0
-evaluateNumberBinary(
-  Fork<Array, T, Array>,
-  const G&
-)::<
-  lambda(
-    const Array&,
-    const Array&
-  )
-> [
-  with T = Function<
-    Fork<
-      Function<NotEqual>,
-      Function<Partition>,
-      Function<Right>
-    >
-  >
-  G = makeBinary(
-    Function<
-      Fork<
-        Function<NotEqual>,
-        Function<Partition>,
-        Function<Right>
-      >
-    >
-  )::<lambda(Number, Number)>
-]
-#endif
 
 
 template <typename T, typename G>
@@ -1556,23 +1528,6 @@ Array evaluate(Atop<Values,T> arg, Context &context)
 }
 
 
-#if ADD_TEST
-auto
-makeBinary(
-  Function<
-    Fork<
-      Function<NotEqual>,
-      Function<Partition>,
-      Function<Right>
-    >
-  >
-)
-{
-  return [](Number, Number) -> Number { assert(false); return 0; };
-}
-#endif
-
-
 namespace {
 template <typename F>
 Array evaluateNumberFork(Fork<Array,Function<F>,Array> arg)
@@ -1622,14 +1577,16 @@ Array evaluate(Fork<Array,Function<Power>,Array> arg, Context &)
 }
 
 
+#if 0
 namespace {
 template <typename F>
-Array evaluate(Fork<Array,Function<F>,Array> arg, Context &)
+Array evaluate(Fork<Array,Function<Fork<F>,Array> arg, Context &)
 {
   auto f = makeBinary(std::move(arg.mid));
   return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
 }
 }
+#endif
 
 
 namespace {
@@ -1985,6 +1942,26 @@ join(
 }
 
 
+#if REFACTOR
+namespace {
+template <typename T>
+static Array
+evaluate(
+  Atop<
+    Function<Atop< Function<T>, Operator<Commute> >>,
+    Array
+  > arg,
+  Context& context
+)
+{
+  return
+    evaluate(
+      fork(Array(arg.right), arg.left.body.left, Array(arg.right)),
+      context
+    );
+}
+}
+#else
 namespace {
 template <typename T>
 static Array
@@ -2000,6 +1977,7 @@ evaluate(
     evaluate(fork(Array(arg.right), arg.left.left, Array(arg.right)), context);
 }
 }
+#endif
 
 
 namespace {
@@ -2620,6 +2598,7 @@ join(
 }
 
 
+#if !REFACTOR
 namespace {
 template <typename A, typename B, typename C>
 Function<Fork<A,B,C>>
@@ -2628,6 +2607,7 @@ evaluate(Fork<A,B,C> arg, Context&)
   return { std::move(arg) };
 }
 }
+#endif
 
 
 namespace {
@@ -3007,12 +2987,63 @@ join(
 #endif
 
 
+#if 0
+evaluate(
+  Fork<A, B, C>,
+  Context&
+) [
+  with A = Array
+  B = Function<Fork<Function<NotEqual>, Function<Partition>, Function<Right> > >
+  C = Array
+]((* & context))
+from ‘Function<
+  Fork<
+    Array,
+    Function<
+      Fork<
+        Function<NotEqual>,
+        Function<Partition>,
+        Function<Right>
+      >
+    >,
+    Array
+  >
+>’ to ‘Array’
+#endif
+
+
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
   auto x = combine(context, MakeRValue<Args>()(std::forward<Args>(args))...);
   return evaluate(std::move(x), context);
 }
+
+
+#if REFACTOR
+namespace {
+template <typename F, typename G>
+Function<
+  Fork<Function<F>, Operator<Beside>, Function<G>>
+>
+evaluate(Fork<Function<F>, Operator<Beside>, Function<G>> /*arg*/, Context&)
+{
+  assert(false);
+}
+}
+#endif
+
+
+#if REFACTOR
+namespace {
+template <typename F, typename G, typename H>
+Function<Fork<Function<F>,Function<G>,Function<H>>>
+evaluate(Fork<Function<F>,Function<G>,Function<H>> arg, Context &)
+{
+  return { std::move(arg) };
+}
+}
+#endif
 
 
 template <typename F>
