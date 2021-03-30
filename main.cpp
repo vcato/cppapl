@@ -3012,6 +3012,48 @@ from ‘Function<
 #endif
 
 
+#if REFACTOR
+namespace {
+Array
+evaluate(
+  Atop<
+   Atop<
+     Function<Times>,
+     Operator<Commute>
+    >,
+    Array
+  >,
+  Context&
+)
+{
+  assert(false);
+}
+}
+#endif
+
+
+#if REFACTOR
+namespace {
+Array
+evaluate(
+  std::remove_reference<
+    Atop<
+      Atop<
+        Function<Plus>,
+        Operator<Commute>
+      >,
+      Array
+    >&
+  >::type,
+  Context&
+)
+{
+  assert(false);
+}
+}
+#endif
+
+
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
@@ -3041,6 +3083,48 @@ Function<Fork<Function<F>,Function<G>,Function<H>>>
 evaluate(Fork<Function<F>,Function<G>,Function<H>> arg, Context &)
 {
   return { std::move(arg) };
+}
+}
+#endif
+
+
+#if REFACTOR
+namespace {
+Function<
+  Fork<
+    Function<
+      Fork<
+        Function<
+          Atop<
+            Function<Times>,
+            Operator<Commute>
+          >
+        >,
+        Operator<Beside>,
+        Function<First>
+      >
+    >,
+    Function<Catenate>,
+    Function<Right>
+  >,
+>
+evaluate(
+  Fork<
+    Fork<
+      Atop<
+        Function<Times>,
+        Operator<Commute>
+      >,
+      Operator<Beside>,
+      Function<First>
+    >,
+    Function<Catenate>,
+    Function<Right>
+  >,
+  Context&
+)
+{
+  assert(false);
 }
 }
 #endif
