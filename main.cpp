@@ -2268,16 +2268,6 @@ auto join(Var left, T right, Context &context)
 
 
 namespace {
-template <typename T>
-Atop<Function<Dfn<T>>,Array>
-join(Function<Dfn<T>> left, Array right, Context&)
-{
-  return {std::move(left), std::move(right)};
-}
-}
-
-
-namespace {
 Atop<Values, Index<Array>>
 join(Array left, Atop<Array, Index<Array>> right, Context&)
 {
