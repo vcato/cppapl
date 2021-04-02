@@ -2964,31 +2964,6 @@ join(
 #endif
 
 
-#if 0
-evaluate(
-  Fork<A, B, C>,
-  Context&
-) [
-  with A = Array
-  B = Function<Fork<Function<NotEqual>, Function<Partition>, Function<Right> > >
-  C = Array
-]((* & context))
-from ‘Function<
-  Fork<
-    Array,
-    Function<
-      Fork<
-        Function<NotEqual>,
-        Function<Partition>,
-        Function<Right>
-      >
-    >,
-    Array
-  >
->’ to ‘Array’
-#endif
-
-
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
@@ -3033,7 +3008,7 @@ Array evaluate(Atop<Dfn<T>,Array> arg, Context &context)
 
 namespace {
 template <typename T>
-auto evaluate(Dfn<T> arg, Context&)
+Dfn<T> evaluate(Dfn<T> arg, Context&)
 {
   return arg;
 }
