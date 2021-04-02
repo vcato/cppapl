@@ -2354,26 +2354,6 @@ join(
 
 
 namespace {
-template <typename T>
-Atop<
-  Atop<Function<Dfn<T>>,Operator<Each>>,
-  Array
->
-join(
-  Function<Dfn<T>> left,
-  Partial<Operator<Each>, Array> right,
-  Context&
-)
-{
-  return {
-    { std::move(left), std::move(right.left) },
-    std::move(right.right)
-  };
-}
-}
-
-
-namespace {
 template <typename T, typename U>
 Atop<
   Atop< Function<T>, Operator<U> >,
