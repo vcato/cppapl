@@ -1,5 +1,6 @@
 #include <utility>
 #include <cassert>
+#include <new>
 #include "lifetime.hpp"
 
 
@@ -42,10 +43,29 @@ class Optional {
       return has_value;
     }
 
+    Optional& operator=(const T &arg)
+    {
+      if (has_value) {
+        value = arg;
+      }
+      else {
+        createObject(value, arg);
+        has_value = true;
+      }
+
+      return *this;
+    }
+
     T &operator*()
     {
       assert(has_value);
       return value;
+    }
+
+    T *operator->()
+    {
+      assert(has_value);
+      return &value;
     }
 
     friend bool operator==(const Optional &a, const Optional &b)

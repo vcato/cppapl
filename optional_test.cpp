@@ -7,4 +7,10 @@ int main()
   assert(Optional<int>() != Optional<int>(4));
   assert(!(Optional<int>() != Optional<int>()));
   assert(Optional<int>(4) == Optional<int>(4));
+
+  {
+    Optional<int> x;
+    x = 5;
+    assert(x == 5);
+  }
 }

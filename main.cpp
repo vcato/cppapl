@@ -5,8 +5,6 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
-#define ADD_TEST 0
-
 using std::cerr;
 using std::ostream;
 using Number = double;
@@ -164,7 +162,8 @@ public:
         stream << "number";
         break;
       case Type::character:
-        assert(false);
+        stream << "character";
+        break;
       case Type::values:
         stream << "non-scalar";
         break;
@@ -251,6 +250,14 @@ static bool operator==(const Array &a, const Array &b)
 }
 
 
+namespace {
+static bool operator!=(const Array &a, const Array &b)
+{
+  return !operator==(a,b);
+}
+}
+
+
 static ostream& operator<<(ostream& stream, const Array &a);
 
 
@@ -278,7 +285,7 @@ static void
 printSpanOn(ostream &stream, const Values &v, int start, int n)
 {
   if (isAllCharacters(v, start, n)) {
-    stream << " \"";
+    stream << "\"";
 
     for (int i=start; i!=start+n; ++i) {
       stream << v[i].asCharacter();
@@ -287,7 +294,7 @@ printSpanOn(ostream &stream, const Values &v, int start, int n)
     stream << "\"";
   }
   else {
-    stream << " [";
+    stream << "[";
 
     for (int i=start; i!=start+n; ++i) {
       stream << " " << v[i];
@@ -317,6 +324,7 @@ printNonScalarArrayOn(
       stream << " " << values[i];
     }
     else if (shape.size() == 2) {
+      stream << " ";
       printSpanOn(stream, values, i*shape[1], shape[1]);
     }
     else {
@@ -356,6 +364,10 @@ static Array makeArrayFromString(const char *arg)
   int n = strlen(arg);
   Array::Shape shape = { n };
   Values values;
+
+  if (n == 1) {
+    return Array(arg[0]);
+  }
 
   for (int i=0; i!=n; ++i) {
     values.push_back(arg[i]);
@@ -457,9 +469,7 @@ struct Reshape {};
 struct First {};
 struct Each {};
 struct Equal {};
-#if ADD_TEST
 struct NotEqual {};
-#endif
 struct Plus {};
 struct Minus {};
 struct Times {};
@@ -476,9 +486,7 @@ struct Roll {};
 struct Right {};
 struct Replicate {};
 struct Enclose {};
-#if ADD_TEST
 struct Partition {};
-#endif
 struct GradeUp {};
 struct MemberOf {};
 struct Not {};
@@ -1271,6 +1279,15 @@ Array evaluate(Fork<Array,Function<Equal>,Array> arg, Context &)
 
 
 namespace {
+Array evaluate(Fork<Array,Function<NotEqual>,Array> arg, Context &)
+{
+  auto f = [](auto a, auto b){ return Number(a != b); };
+  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
+}
+}
+
+
+namespace {
 Array evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
 {
   if (isScalar(arg.left)) {
@@ -1978,7 +1995,61 @@ evaluate(
 }
 
 
-#if ADD_TEST
+namespace {
+Array
+evaluate(Fork<Array, Function<Partition>, Array> arg, Context&)
+{
+  // I think this basically groups values of the right array based on
+  // values in the left array and then discards those groups where the
+  // left array value is 0.
+  if (isVector(arg.left) && isVector(arg.right)) {
+    if (arg.left.shape()[0] != arg.right.shape()[0]) {
+      assert(false);
+    }
+
+    int n = arg.left.shape()[0];
+    Optional<Number> maybe_current_value;
+    Values values;
+    Values result_values;
+
+    for (int i=0; i!=n; ++i) {
+      const Array &x = arg.left.values()[i];
+
+      if (!x.isNumber()) {
+        assert(false);
+      }
+
+      Number xn = x.asNumber();
+
+      if (xn != maybe_current_value) {
+        if (maybe_current_value) {
+          if (*maybe_current_value != 0) {
+            result_values.push_back(makeArrayFromValues(std::move(values)));
+          }
+
+          values.clear();
+        }
+
+        maybe_current_value = xn;
+      }
+
+      values.push_back(std::move(arg.right.values()[i]));
+    }
+
+    if (*maybe_current_value != 0) {
+      result_values.push_back(makeArrayFromValues(std::move(values)));
+    }
+
+    return makeArrayFromValues(result_values);
+  }
+
+  cerr << "arg.left: " << arg.left << "\n";
+  cerr << "arg.right: " << arg.right << "\n";
+  assert(false);
+}
+}
+
+
 namespace {
 template <typename F, typename G, typename H>
 Array
@@ -2018,7 +2089,6 @@ evaluate(
     );
 }
 }
-#endif
 
 
 namespace {
@@ -2915,7 +2985,6 @@ static T combine(Context &, T arg)
 }
 
 
-#if ADD_TEST
 namespace {
 template <typename F, typename G>
 Atop<Function<F>,Function<G>>
@@ -2924,7 +2993,6 @@ join(Function<F> left, Function<G> right, Context&)
   return { std::move(left), std::move(right) };
 }
 }
-#endif
 
 
 template <typename Arg1, typename Arg2, typename ...Args>
@@ -2936,7 +3004,6 @@ static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 }
 
 
-#if ADD_TEST
 namespace {
 template <typename F, typename G, typename H>
 Fork<Function<F>, Function<G>, Function<H>>
@@ -2949,7 +3016,6 @@ join(
   return { std::move(left), std::move(right.left), std::move(right.right) };
 }
 }
-#endif
 
 
 template <typename F1, typename F2, typename F3, typename F4, typename F5>
@@ -2978,6 +3044,23 @@ static auto evaluateInContext(Context &context, Args &&...args)
 {
   auto x = combine(context, MakeRValue<Args>()(std::forward<Args>(args))...);
   return evaluate(std::move(x), context);
+}
+
+
+namespace {
+template <typename F, typename G, typename H>
+Function<Fork<Function<F>,Function<G>,Function<H>>>
+evaluate(
+  Fork<
+    Function<F>,
+    Function<G>,
+    Function<H>
+  > arg,
+  Context&
+)
+{
+  return { std::move(arg) };
+}
 }
 
 
@@ -3138,9 +3221,7 @@ struct Placeholder {
   static constexpr Function<Reshape>   reshape = {};
   static constexpr Function<First>     first = {};
   static constexpr Function<Equal>     equal = {};
-#if ADD_TEST
   static constexpr Function<NotEqual>  not_equal = {};
-#endif
   static constexpr Function<Plus>      plus = {};
   static constexpr Function<Minus>     minus = {};
   static constexpr Function<Times>     times = {};
@@ -3154,9 +3235,7 @@ struct Placeholder {
   static constexpr Function<Not>       isnot = {};
   static constexpr Function<Drop>      drop = {};
   static constexpr Function<Enclose>   enclose = {};
-#if ADD_TEST
   static constexpr Function<Partition> partition = {};
-#endif
   static constexpr Function<GradeUp>   grade_up = {};
   static constexpr Function<Where>     where = {};
   static constexpr Function<Reverse>   reverse = {};
@@ -3193,9 +3272,7 @@ constexpr Function<Shape>     Placeholder::shape;
 constexpr Function<Reshape>   Placeholder::reshape;
 constexpr Function<First>     Placeholder::first;
 constexpr Function<Equal>     Placeholder::equal;
-#if ADD_TEST
 constexpr Function<NotEqual>  Placeholder::not_equal;
-#endif
 constexpr Function<Plus>      Placeholder::plus;
 constexpr Function<Minus>     Placeholder::minus;
 constexpr Function<Times>     Placeholder::times;
@@ -3209,9 +3286,7 @@ constexpr Function<Drop>      Placeholder::drop;
 constexpr Function<MemberOf>  Placeholder::member_of;
 constexpr Function<Not>       Placeholder::isnot;
 constexpr Function<Enclose>   Placeholder::enclose;
-#if ADD_TEST
 constexpr Function<Partition> Placeholder::partition;
-#endif
 constexpr Function<GradeUp>   Placeholder::grade_up;
 constexpr Function<Where>     Placeholder::where;
 constexpr Function<Reverse>   Placeholder::reverse;
@@ -3415,14 +3490,12 @@ static void testExamples()
     assert(str(grid) == expected);
   }
 
-#if ADD_TEST
   {
     Array result =
       _(' ', _(_.not_equal, _.partition, _.right), " many a  time");
 
     assert(result == _("many","a","time"));
   }
-#endif
 }
 
 
