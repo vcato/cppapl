@@ -6,7 +6,6 @@
 #include "vectorio.hpp"
 
 #define ADD_TEST 0
-#define REFACTOR 0
 
 
 using std::cerr;
@@ -526,8 +525,8 @@ static Fork<A,B,C> fork(A a, B b, C c)
 }
 
 
-template <typename Function>
-static Array evaluateUnary(Array a, Function f)
+template <typename F>
+static Array evaluateUnary(Array a, F f)
 {
   if (isScalar(a)) {
     return f(a);
@@ -544,8 +543,8 @@ static Array evaluateUnary(Array a, Function f)
 }
 
 
-template <typename Function>
-static Array evaluateBinary(Array left, Array right, Function f)
+template <typename F>
+static Array evaluateBinary(Array left, Array right, F f)
 {
   if (isScalar(left)) {
     if (isScalar(right)) {
@@ -1839,14 +1838,15 @@ Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
 
 
 namespace {
+template <typename F, typename G>
 Array
 evaluate(
   Fork<
     Array,
     Fork<
-      Function<Plus>,
+      Function<F>,
       Operator<Beside>,
-      Function<Divide>
+      Function<G>
     >,
     Array
   > arg,
@@ -1942,26 +1942,6 @@ join(
 }
 
 
-#if REFACTOR
-namespace {
-template <typename T>
-static Array
-evaluate(
-  Atop<
-    Function<Atop< Function<T>, Operator<Commute> >>,
-    Array
-  > arg,
-  Context& context
-)
-{
-  return
-    evaluate(
-      fork(Array(arg.right), arg.left.body.left, Array(arg.right)),
-      context
-    );
-}
-}
-#else
 namespace {
 template <typename T>
 static Array
@@ -1977,7 +1957,6 @@ evaluate(
     evaluate(fork(Array(arg.right), arg.left.left, Array(arg.right)), context);
 }
 }
-#endif
 
 
 namespace {
@@ -2598,7 +2577,6 @@ join(
 }
 
 
-#if !REFACTOR
 namespace {
 template <typename A, typename B, typename C>
 Function<Fork<A,B,C>>
@@ -2607,7 +2585,6 @@ evaluate(Fork<A,B,C> arg, Context&)
   return { std::move(arg) };
 }
 }
-#endif
 
 
 namespace {
@@ -3012,122 +2989,12 @@ from ‘Function<
 #endif
 
 
-#if REFACTOR
-namespace {
-Array
-evaluate(
-  Atop<
-   Atop<
-     Function<Times>,
-     Operator<Commute>
-    >,
-    Array
-  >,
-  Context&
-)
-{
-  assert(false);
-}
-}
-#endif
-
-
-#if REFACTOR
-namespace {
-Array
-evaluate(
-  std::remove_reference<
-    Atop<
-      Atop<
-        Function<Plus>,
-        Operator<Commute>
-      >,
-      Array
-    >&
-  >::type,
-  Context&
-)
-{
-  assert(false);
-}
-}
-#endif
-
-
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
   auto x = combine(context, MakeRValue<Args>()(std::forward<Args>(args))...);
   return evaluate(std::move(x), context);
 }
-
-
-#if REFACTOR
-namespace {
-template <typename F, typename G>
-Function<
-  Fork<Function<F>, Operator<Beside>, Function<G>>
->
-evaluate(Fork<Function<F>, Operator<Beside>, Function<G>> /*arg*/, Context&)
-{
-  assert(false);
-}
-}
-#endif
-
-
-#if REFACTOR
-namespace {
-template <typename F, typename G, typename H>
-Function<Fork<Function<F>,Function<G>,Function<H>>>
-evaluate(Fork<Function<F>,Function<G>,Function<H>> arg, Context &)
-{
-  return { std::move(arg) };
-}
-}
-#endif
-
-
-#if REFACTOR
-namespace {
-Function<
-  Fork<
-    Function<
-      Fork<
-        Function<
-          Atop<
-            Function<Times>,
-            Operator<Commute>
-          >
-        >,
-        Operator<Beside>,
-        Function<First>
-      >
-    >,
-    Function<Catenate>,
-    Function<Right>
-  >,
->
-evaluate(
-  Fork<
-    Fork<
-      Atop<
-        Function<Times>,
-        Operator<Commute>
-      >,
-      Operator<Beside>,
-      Function<First>
-    >,
-    Function<Catenate>,
-    Function<Right>
-  >,
-  Context&
-)
-{
-  assert(false);
-}
-}
-#endif
 
 
 template <typename F>
