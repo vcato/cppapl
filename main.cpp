@@ -1502,10 +1502,15 @@ namespace {
 template <typename T>
 Array evaluate(Fork<Values,T,Array> arg, Context &context)
 {
-  Array left = makeArrayFromValues(std::move(arg.left));
-  using Return = Fork<Array, T, Array>;
-  auto x = Return{std::move(left), arg.mid, std::move(arg.right)};
-  return evaluate(std::move(x), context);
+  return
+    evaluate(
+      fork(
+        makeArrayFromValues(std::move(arg.left)),
+        std::move(arg.mid),
+        std::move(arg.right)
+      ),
+      context
+    );
 }
 }
 
