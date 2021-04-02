@@ -1580,18 +1580,6 @@ Array evaluate(Fork<Array,Function<Power>,Array> arg, Context &)
 }
 
 
-#if 0
-namespace {
-template <typename F>
-Array evaluate(Fork<Array,Function<Fork<F>,Array> arg, Context &)
-{
-  auto f = makeBinary(std::move(arg.mid));
-  return evaluateBinary(std::move(arg.left), std::move(arg.right), f);
-}
-}
-#endif
-
-
 namespace {
 template <typename F>
 Array
@@ -1988,6 +1976,49 @@ evaluate(
   return evaluate(atop(fg, std::move(b)), context);
 }
 }
+
+
+#if ADD_TEST
+namespace {
+template <typename F, typename G, typename H>
+Array
+evaluate(
+  Fork<
+    Array,
+    Function<Fork<Function<F>, Function<G>, Function<H> > >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  // (alpha f omega) g (alpha h omega)
+
+  Array alpha = std::move(arg.left);
+  Array omega = std::move(arg.right);
+  Function<F> f = std::move(arg.mid.body.left);
+  Function<G> g = std::move(arg.mid.body.mid);
+  Function<H> h = std::move(arg.mid.body.right);
+
+  Array afo =
+    evaluate(
+      fork(Array(alpha), std::move(f), Array(omega)),
+      context
+    );
+
+  Array aho =
+    evaluate(
+      fork(Array(alpha), std::move(h), Array(omega)),
+      context
+    );
+
+  return
+    evaluate(
+      fork(std::move(afo), std::move(g), std::move(aho)),
+      context
+    );
+}
+}
+#endif
 
 
 namespace {
@@ -2545,16 +2576,6 @@ join(
 
 
 namespace {
-template <typename A, typename B, typename C>
-Function<Fork<A,B,C>>
-evaluate(Fork<A,B,C> arg, Context&)
-{
-  return { std::move(arg) };
-}
-}
-
-
-namespace {
 template <typename A, typename B>
 Atop<
   Atop<
@@ -2929,6 +2950,27 @@ join(
 }
 }
 #endif
+
+
+template <typename F1, typename F2, typename F3, typename F4, typename F5>
+Function<
+  Fork<
+    Fork<F1, F2, F3>,
+    Function<F4>,
+    Function<F5>
+  >
+>
+evaluate(
+  Fork<
+    Fork<F1, F2, F3>,
+    Function<F4>,
+    Function<F5>
+  > arg,
+  Context&
+)
+{
+  return { std::move(arg) };
+}
 
 
 template <typename...Args>
