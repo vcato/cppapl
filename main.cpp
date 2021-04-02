@@ -1617,7 +1617,7 @@ Array
 evaluate(
   Atop<
     Atop<
-      Function<Dfn<T>>,
+      Function<T>,
       Operator<Each>
     >,
     Array
@@ -1635,7 +1635,7 @@ evaluate(
     Values values;
 
     for (auto &x : arg.right.values()) {
-      values.push_back(evaluateDfn(arg.left.left.body, std::move(x), context));
+      values.push_back(evaluate(atop(arg.left.left, std::move(x)), context));
     }
 
     return Array(std::move(arg).right.shape(), std::move(values));
