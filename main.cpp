@@ -7,7 +7,6 @@
 
 #define ADD_TEST 0
 
-
 using std::cerr;
 using std::ostream;
 using Number = double;
@@ -1617,7 +1616,10 @@ template <typename T>
 Array
 evaluate(
   Atop<
-    Atop<Dfn<T> , Operator<Each>>,
+    Atop<
+      Function<Dfn<T>>,
+      Operator<Each>
+    >,
     Array
   > arg,
   Context& context
@@ -1633,7 +1635,7 @@ evaluate(
     Values values;
 
     for (auto &x : arg.right.values()) {
-      values.push_back(evaluateDfn(arg.left.left, std::move(x), context));
+      values.push_back(evaluateDfn(arg.left.left.body, std::move(x), context));
     }
 
     return Array(std::move(arg).right.shape(), std::move(values));
@@ -2042,7 +2044,7 @@ auto join(Operator<T> left, Var right, Context& context)
 
 namespace {
 template <typename T>
-auto join(Dfn<T> left, Var right, Context& context)
+auto join(Function<Dfn<T>> left, Var right, Context& context)
 {
   assert(right.ptr);
   return join(std::move(left), Array(*right.ptr), context);
@@ -2277,8 +2279,8 @@ auto join(Var left, T right, Context &context)
 
 namespace {
 template <typename T>
-Atop<Dfn<T>,Array>
-join(Dfn<T> left, Array right, Context&)
+Atop<Function<Dfn<T>>,Array>
+join(Function<Dfn<T>> left, Array right, Context&)
 {
   return {std::move(left), std::move(right)};
 }
@@ -2354,11 +2356,11 @@ join(
 namespace {
 template <typename T>
 Atop<
-  Atop<Dfn<T>,Operator<Each>>,
+  Atop<Function<Dfn<T>>,Operator<Each>>,
   Array
 >
 join(
-  Dfn<T> left,
+  Function<Dfn<T>> left,
   Partial<Operator<Each>, Array> right,
   Context&
 )
@@ -2999,18 +3001,9 @@ static Array evaluateDfn(const Dfn<T> &dfn, Array arg, Context &context)
 
 namespace {
 template <typename T>
-Array evaluate(Atop<Dfn<T>,Array> arg, Context &context)
+Array evaluate(Atop<Function<Dfn<T>>,Array> arg, Context &context)
 {
-  return evaluateDfn(arg.left, std::move(arg.right), context);
-}
-}
-
-
-namespace {
-template <typename T>
-Dfn<T> evaluate(Dfn<T> arg, Context&)
-{
-  return arg;
+  return evaluateDfn(arg.left.body, std::move(arg.right), context);
 }
 }
 
@@ -3176,7 +3169,7 @@ struct Placeholder {
   constexpr auto dfn(Args &&...args)
   {
     auto f = defer(std::forward<Args>(args)...);
-    return Dfn<decltype(f)>{std::move(f)};
+    return Function<Dfn<decltype(f)>>{std::move(f)};
   }
 
   template <typename ...Args>
