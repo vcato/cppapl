@@ -2043,16 +2043,6 @@ auto join(Operator<T> left, Var right, Context& context)
 
 
 namespace {
-template <typename T>
-auto join(Function<Dfn<T>> left, Var right, Context& context)
-{
-  assert(right.ptr);
-  return join(std::move(left), Array(*right.ptr), context);
-}
-}
-
-
-namespace {
 Vars join(Var left, Var right, Context &)
 {
   return { std::move(left), std::move(right) };
