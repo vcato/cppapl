@@ -476,6 +476,7 @@ struct Times {};
 struct Divide {};
 struct Power {};
 struct Greater {};
+struct And {};
 struct Iota {};
 struct Reduce {};
 struct Product {};
@@ -515,6 +516,13 @@ static bool isScalar(const Array &a)
 static bool isVector(const Array &arg)
 {
   return arg.isNonScalar() && arg.shape().size() == 1;
+}
+
+
+template <typename T>
+static Function<T> function(T body)
+{
+  return { std::move(body) };
 }
 
 
@@ -838,6 +846,12 @@ static Number identityOf(Function<Times>)
 }
 
 
+static Number identityOf(Function<And>)
+{
+  return 1;
+}
+
+
 auto makeBinary(Function<Plus>)
 {
   return [](Number a, Number b) { return a + b; };
@@ -865,6 +879,12 @@ auto makeBinary(Function<Divide>)
 auto makeBinary(Function<Power>)
 {
   return [](Number a, Number b) { return std::pow(a,b); };
+}
+
+
+auto makeBinary(Function<And>)
+{
+  return [](Number a, Number b) { return a && b; };
 }
 
 
@@ -1602,7 +1622,7 @@ template <typename F>
 Array
 evaluate(
   Atop<
-    Atop< Function<F>, Operator<Reduce> >,
+    Function< Atop< Function<F>, Operator<Reduce> > >,
     Array
   > arg,
   Context &
@@ -1613,10 +1633,27 @@ evaluate(
   if (right.shape().size() == 1) {
     int start_index = 0;
     int end_index = right.values().size();
-    return reduce(arg.left.left, arg.right, start_index, end_index);
+    return reduce(arg.left.body.left, arg.right, start_index, end_index);
   }
 
   assert(false);
+}
+}
+
+
+namespace {
+template <typename F>
+Array
+evaluate(
+  Atop<
+    Atop< Function<F>, Operator<Reduce> >,
+    Array
+  > arg,
+  Context &context
+)
+{
+  return
+    evaluate(atop(function(std::move(arg.left)),std::move(arg.right)), context);
 }
 }
 
@@ -2805,16 +2842,11 @@ join(
 
 
 namespace {
-Partial<
-  Operator<Reduce>,
-  Array
->
+template <typename F>
+Partial< Operator<Reduce>, Array >
 join(
   Operator<Reduce> left,
-  Atop<
-    Function<Iota>,
-    Array
-  > right,
+  Atop< Function<F>, Array > right,
   Context& context
 )
 {
@@ -2995,6 +3027,51 @@ join(Function<F> left, Function<G> right, Context&)
 }
 
 
+namespace {
+template <typename A, typename B, typename C, typename D>
+Atop<
+  Function<
+    Atop<
+      Function<A>,
+      Operator<Reduce>
+    >
+  >,
+  Function<
+    Fork<
+      Function<B>,
+      Function<C>,
+      Function<D>
+    >
+  >
+>
+join(
+  Function<A> left,
+  Partial<
+    Operator<Reduce>,
+    Fork<
+      Function<B>,
+      Function<C>,
+      Function<D>
+    >
+  > right,
+  Context&
+)
+{
+  return {
+    {
+      {
+        std::move(left),
+        std::move(right.left)
+      }
+    },
+    {
+      std::move(right.right)
+    }
+  };
+}
+}
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
@@ -3039,6 +3116,16 @@ evaluate(
 }
 
 
+namespace {
+template <typename A, typename B>
+Function< Atop< Function<A>, Function<B> > >
+evaluate(Atop< Function<A>, Function<B> > arg, Context&)
+{
+  return { std::move(arg) };
+}
+}
+
+
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
@@ -3060,6 +3147,26 @@ evaluate(
 )
 {
   return { std::move(arg) };
+}
+}
+
+
+namespace {
+template <typename G, typename H>
+Array
+evaluate(
+  Atop<
+    Function< Atop< Function<G>, Function<H> > >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  Function<G> g = std::move(arg.left.body.left);
+  Function<H> h = std::move(arg.left.body.right);
+  Array a = std::move(arg.right);
+  Array ha = evaluate(atop(std::move(h), std::move(a)), context);
+  return evaluate( atop(std::move(g), std::move(ha)), context);
 }
 }
 
@@ -3228,6 +3335,7 @@ struct Placeholder {
   static constexpr Function<Divide>    divide = {};
   static constexpr Function<Power>     power = {};
   static constexpr Function<Greater>   greater = {};
+  static constexpr Function<And>       and_ = {};
   static constexpr Function<Iota>      iota = {};
   static constexpr Function<Roll>      roll = {};
   static constexpr Function<Replicate> replicate = {};
@@ -3279,6 +3387,7 @@ constexpr Function<Times>     Placeholder::times;
 constexpr Function<Divide>    Placeholder::divide;
 constexpr Function<Power>     Placeholder::power;
 constexpr Function<Greater>   Placeholder::greater;
+constexpr Function<And>       Placeholder::and_;
 constexpr Function<Iota>      Placeholder::iota;
 constexpr Function<Roll>      Placeholder::roll;
 constexpr Function<Replicate> Placeholder::replicate;
@@ -3386,6 +3495,8 @@ static void runSimpleTests()
   assert(_(1, _.right, 2) == 2);
   assert(_(_.times, _.commute, 2) == 4);
   assert(_(_.plus, _.commute, 3) == 6);
+  assert(_(_(_.and_, _.reduce, _.first, _.equal, _.right),2,2,2) == 1);
+  assert(_(_(_.and_, _.reduce, _.first, _.equal, _.right),2,2,3) == 0);
 }
 
 
