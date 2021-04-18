@@ -2213,10 +2213,11 @@ join(Var left, Partial<Keyword<Assign>, Array> right, Context&)
 
 
 namespace {
+template <typename F>
 Array
 evaluate(
   Atop<
-    Fork< Values, Operator<Beside>, Function<Reshape> >,
+    Fork< Values, Operator<Beside>, Function<F> >,
     Array
   > arg,
   Context& context
@@ -2236,10 +2237,11 @@ evaluate(
 
 
 namespace {
+template <typename F>
 Array
 evaluate(
   Fork<
-    Fork< vector<Array>, Operator<Beside>, Function<Reshape> >,
+    Fork<Values, Operator<Beside>, Function<F> >,
     Operator<Each>,
     Array
   > arg,
@@ -2618,10 +2620,13 @@ join(
 }
 
 
-static Atop<Function<Catenate>, Function<Right>>
-join(Function<Catenate> left, Function<Right> right, Context&)
+namespace {
+template <typename F, typename G>
+static Atop<Function<F>, Function<G>>
+join(Function<F> left, Function<G> right, Context&)
 {
   return { std::move(left), std::move(right) };
+}
 }
 
 
@@ -3018,16 +3023,6 @@ static T combine(Context &, T arg)
 
 
 namespace {
-template <typename F, typename G>
-Atop<Function<F>,Function<G>>
-join(Function<F> left, Function<G> right, Context&)
-{
-  return { std::move(left), std::move(right) };
-}
-}
-
-
-namespace {
 template <typename A, typename B, typename C, typename D>
 Atop<
   Function<
@@ -3277,14 +3272,15 @@ auto join(T left, Expr<F> right, Context &context)
 
 
 namespace {
+template <typename F, typename G>
 Atop<
-  Atop<Function<Plus>,Operator<Reduce>>,
+  Atop<Function<F>,Operator<Reduce>>,
   Array
 >
 join(
   Atop<
-    Atop<Function<Plus>, Operator<Reduce>>,
-    Function<Iota>
+    Atop<Function<F>, Operator<Reduce>>,
+    Function<G>
   > left,
   Array right,
   Context &context
