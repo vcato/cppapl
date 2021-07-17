@@ -397,6 +397,7 @@ template <typename T> struct Operator { };
 namespace {
 struct Context {
   std::mt19937 &random_engine;
+  Array *left_arg_ptr = nullptr;
   Array *right_arg_ptr = nullptr;
 };
 }
@@ -486,6 +487,7 @@ struct First {};
 struct GradeUp {};
 struct Greater {};
 struct Iota {};
+struct LeftArg {};
 struct MemberOf {};
 struct Minus {};
 struct Not {};
@@ -996,7 +998,7 @@ Array evaluate(Values arg, Context &)
 }
 
 
-static void extractValuesTo(Values &values, Array &&a)
+static void extractValuesTo(Values &values, Array a)
 {
   if (isScalar(a)) {
     values.push_back(std::move(a));
@@ -1312,6 +1314,21 @@ Array evaluate(Keyword<RightArg> /*arg*/, Context &context)
   }
 
   return Array(*context.right_arg_ptr);
+}
+}
+
+
+namespace {
+Array evaluate(Atop< Keyword<LeftArg>, Array> arg, Context& context)
+{
+  if (!context.left_arg_ptr) {
+    assert(false);
+  }
+
+  Values values;
+  values.push_back(*context.left_arg_ptr);
+  values.push_back(std::move(arg.right));
+  return evaluate(std::move(values), context);
 }
 }
 
@@ -2356,6 +2373,15 @@ join(Keyword<RightArg> left, Atop<Function<T>, Array> right, Context &)
 
 
 namespace {
+Atop<Keyword<LeftArg>, Array>
+join(Keyword<LeftArg> left, Array right, Context &)
+{
+  return { std::move(left), std::move(right) };
+}
+}
+
+
+namespace {
 template <typename T>
 Partial<Operator<T>,Array>
 join(Operator<T> left, Values right, Context &)
@@ -3156,6 +3182,26 @@ evaluate(Atop< Function<A>, Function<B> > arg, Context&)
 }
 
 
+namespace {
+template <typename T>
+Array
+evaluate(
+  Fork<Array, Function<Dfn<T>>, Array> arg,
+  Context& context
+)
+{
+  return
+    evaluateDfn2(
+      arg.mid.body,
+      std::move(arg.left),
+      std::move(arg.right),
+      context
+    );
+}
+}
+
+
+
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
@@ -3222,6 +3268,19 @@ static Array evaluateDfn(const Dfn<T> &dfn, Array arg, Context &context)
 {
   Context c{context.random_engine};
   c.right_arg_ptr = &arg;
+  return evaluateExprInContext(dfn.f, c);
+}
+
+
+template <typename T>
+static Array
+evaluateDfn2(
+  const Dfn<T> &dfn, Array left_arg, Array right_arg, Context &context
+)
+{
+  Context c{context.random_engine};
+  c.left_arg_ptr = &left_arg;
+  c.right_arg_ptr = &right_arg;
   return evaluateExprInContext(dfn.f, c);
 }
 
@@ -3383,6 +3442,7 @@ struct Placeholder {
   static constexpr Function<Where>     where = {};
   static constexpr Keyword<Assign>     assign = {};
   static constexpr Keyword<Empty>      empty = {};
+  static constexpr Keyword<LeftArg>    left_arg = {};
   static constexpr Keyword<RightArg>   right_arg = {};
   static constexpr Operator<Beside>    beside = {};
   static constexpr Operator<Commute>   commute = {};
@@ -3436,6 +3496,7 @@ constexpr Function<Times>     Placeholder::times;
 constexpr Function<Where>     Placeholder::where;
 constexpr Keyword<Assign>     Placeholder::assign;
 constexpr Keyword<Empty>      Placeholder::empty;
+constexpr Keyword<LeftArg>    Placeholder::left_arg;
 constexpr Keyword<RightArg>   Placeholder::right_arg;
 constexpr Operator<Beside>    Placeholder::beside;
 constexpr Operator<Commute>   Placeholder::commute;
@@ -3531,6 +3592,7 @@ static void runSimpleTests()
   assert(_(_(_.and_, _.reduce, _.first, _.equal, _.right),2,2,2) == 1);
   assert(_(_(_.and_, _.reduce, _.first, _.equal, _.right),2,2,3) == 0);
   assert(_(_.enlist, _("abc", "aabc", "bcccc")) == _("abcaabcbcccc"));
+  assert(_(2, _.dfn(_.left_arg, _.right_arg), 3) == _(2,3));
 }
 
 
@@ -3725,7 +3787,7 @@ static void testRedistributeCharacters()
   Placeholder _;
 
   Array s = _("abc", "aabc", "bcccc");
-  SHOW(_(_.enlist, s));
+  SHOW(_(_(_.enlist, s));
   assert(false);
 }
 #endif
