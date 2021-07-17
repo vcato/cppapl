@@ -2,6 +2,7 @@
 #include <random>
 #include <sstream>
 #include <algorithm>
+#include <map>
 #include "optional.hpp"
 #include "vectorio.hpp"
 
@@ -479,6 +480,7 @@ struct Commute {};
 struct Divide {};
 struct Drop {};
 struct Each {};
+struct Key {};
 struct Empty {};
 struct Enclose {};
 struct Enlist {};
@@ -1026,22 +1028,37 @@ Array evaluate(
 }
 
 
+static Array makeVector(Values v)
+{
+  int n = v.size();
+  return Array( { n }, std::move(v) );
+}
+
+
+namespace {
+static Array::Shape arrayShape(const Array &a)
+{
+  if (isScalar(a)) {
+    return {};
+  }
+  else {
+    return a.shape();
+  }
+}
+}
+
+
 namespace {
 Array evaluate(Atop<Function<Shape>,Array> arg, Context &)
 {
   Values values;
-
-  if (isScalar(arg.right)) {
-    return Array({0},{});
-  }
-
-  const Array::Shape &shape = arg.right.shape();
+  Array::Shape shape = arrayShape(arg.right);
 
   for (int x : shape) {
     values.push_back(Number(x));
   }
 
-  return Array({ int(shape.size()) }, std::move(values));
+  return makeVector(std::move(values));
 }
 }
 
@@ -1075,7 +1092,6 @@ Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
 
     int n = *maybe_n;
     assert(n >= 0);
-    Array::Shape shape = {n};
 
     Values values;
 
@@ -1083,7 +1099,7 @@ Array evaluate(Atop<Function<Iota>, Array> arg, Context &)
       values.push_back(Number(i));
     }
 
-    return Array(std::move(shape), std::move(values));
+    return makeVector(std::move(values));
   }
 
   if (isVector(arg.right)) {
@@ -1247,7 +1263,7 @@ Array evaluate(Fork<Array, Function<Roll>, Array> arg, Context &context)
         values.push_back(roll(range, context));
       }
 
-      return Array({count}, std::move(values));
+      return makeVector(std::move(values));
     }
 
     assert(false);
@@ -1373,10 +1389,9 @@ Array evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
       int n_to_drop = *maybe_n_to_drop;
 
       if (arg.right.shape()[0] <= n_to_drop) {
-        return Array({0}, {});
+        return makeVector({});
       }
 
-      Array::Shape shape = {arg.right.shape()[0] - n_to_drop};
       auto iter = arg.right.values().begin();
       iter += n_to_drop;
       Values values;
@@ -1385,7 +1400,7 @@ Array evaluate(Fork<Array,Function<Drop>,Array> arg, Context &/*context*/)
         values.push_back(std::move(*iter));
       }
 
-      return Array(std::move(shape), std::move(values));
+      return makeVector(std::move(values));
     }
   }
 
@@ -1407,8 +1422,7 @@ Array evaluate(Fork<Array,Function<Reshape>,Array> arg, Context &)
         values.push_back(arg.right);
       }
 
-      Array::Shape shape = {n};
-      return Array(std::move(shape), std::move(values));
+      return makeVector(std::move(values));
     }
     assert(false);
   }
@@ -1816,14 +1830,13 @@ Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
       assert(false);
     }
 
-    Array::Shape shape = {n};
     Values values;
 
     for (int i=0; i!=n; ++i) {
       values.push_back(Array(right));
     }
 
-    return Array(std::move(shape), std::move(values));
+    return makeVector(std::move(values));
   }
   else if (left.shape().size() == 1 && right.shape().size() == 1) {
     if (left.shape()[0] != right.shape()[0]) {
@@ -1837,8 +1850,7 @@ Array evaluate(Fork<Array, Function<Replicate>, Array> arg, Context &)
     assert(false);
   }
 
-  size_t n = values.size();
-  return Array({ int(n) }, std::move(values));
+  return makeVector(std::move(values));
 }
 }
 
@@ -1911,8 +1923,7 @@ Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
 
     const Values &v = arg.right.values();
 
-    auto comp = [&](int a, int b)
-    {
+    auto comp = [&](int a, int b){
       if (v[a].isNumber() && v[b].isNumber()) {
         return v[a].asNumber() < v[b].asNumber();
       }
@@ -1929,7 +1940,7 @@ Array evaluate(Atop<Function<GradeUp>, Array> arg, Context &)
       values.push_back(x+1);
     }
 
-    return Array({n}, std::move(values));
+    return makeVector(std::move(values));
   }
 
   cerr << "arg.right: " << arg.right << "\n";
@@ -2311,7 +2322,7 @@ evaluate(
       values.push_back(evaluate(atop(arg.left, std::move(x)), context));
     }
 
-    return Array(std::move(arg.right.shape()), std::move(values));
+    return makeVector(std::move(values));
   }
 
   assert(false);
@@ -3000,7 +3011,7 @@ evaluate(Fork<vector<Var>, Keyword<Assign>, Array> arg, Context& context)
       );
     }
 
-    return Array(arg.right.shape(), std::move(values));
+    return makeVector(std::move(values));
   }
 
   assert(false);
@@ -3247,6 +3258,152 @@ evaluate(
 }
 
 
+namespace {
+template <typename T>
+Function<
+  Atop<
+    Function<T>,
+    Operator<Key>
+  >
+>
+evaluate(
+  Atop< Function<T>, Operator<Key> > arg,
+  Context& context
+)
+{
+  return { std::move(arg) };
+}
+}
+
+
+static int lengthOf(const Array &a)
+{
+  if (isVector(a)) {
+    return a.shape()[0];
+  }
+
+  SHOW(a.shape());
+  assert(false);
+}
+
+
+static void maximize(int &a, int b)
+{
+  if (b > a) {
+    a = b;
+  }
+}
+
+
+static Values extendedValues(Array a, int width)
+{
+  if (isVector(a)) {
+    if (a.shape()[0] == width) {
+      return std::move(a.values());
+    }
+
+    assert(false);
+  }
+
+  SHOW(a);
+  SHOW(width);
+  assert(false);
+}
+
+
+namespace {
+struct LessArrayFunction {
+  bool operator()(const Array &a, const Array &b) const
+  {
+    // Need to use a function to get the shape, since a.shape()
+    // should only be used for non-scalar arrays.
+    if (isScalar(a) && isScalar(b)) {
+      if (a.type() == b.type()) {
+        switch (a.type()) {
+          case Array::Type::number:
+            assert(false);
+            break;
+          case Array::Type::character:
+            return a.asCharacter() < b.asCharacter();
+          case Array::Type::values:
+            assert(false);
+            break;
+          case Array::Type::box:
+            assert(false);
+            break;
+        }
+        assert(false);
+      }
+      assert(false);
+    }
+
+    SHOW(arrayShape(a));
+    SHOW(arrayShape(b));
+    assert(false);
+  }
+};
+}
+
+
+namespace {
+template <typename T>
+Array
+evaluate(
+  Atop<
+    Atop< Function<T>, Operator<Key> >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  // Make a map where the unique values in the array are the keys and the
+  // list of indices are the values, then call the function with each
+  // of these pairs.
+
+  std::map<Array, Values, LessArrayFunction> m;
+  Function<T> f = std::move(arg.left.left);
+
+  if (isVector(arg.right)) {
+    int index = 1;
+
+    for (const Array &a : arg.right.values()) {
+      m[a].push_back(index);
+      ++index;
+    }
+
+    Values raw_values;
+
+    for (auto &e : m) {
+      Array key(e.first);
+      Array values = makeArrayFromValues(std::move(e.second));
+
+      raw_values.push_back(
+        evaluate(fork(std::move(key), f, std::move(values)), context)
+      );
+    }
+
+    int width = 0;
+
+    for (const auto &v : raw_values) {
+      maximize(width, lengthOf(v));
+    }
+
+    // int width = max(length(v) for v in values);
+    Values values;
+
+    for (auto &e : raw_values) {
+      appendTo(values, extendedValues(std::move(e), width));
+    }
+
+    int height = raw_values.size();
+    return Array( { height, width }, std::move(values));
+  }
+
+  assert(false);
+}
+}
+
+
 template <typename F>
 static auto evaluateExprInContext(const F &f, Context &context)
 {
@@ -3447,6 +3604,7 @@ struct Placeholder {
   static constexpr Operator<Beside>    beside = {};
   static constexpr Operator<Commute>   commute = {};
   static constexpr Operator<Each>      each = {};
+  static constexpr Operator<Key>       key = {};
   static constexpr Operator<Outer>     outer = {};
   static constexpr Operator<Product>   product = {};
   static constexpr Operator<Reduce>    reduce = {};
@@ -3501,6 +3659,7 @@ constexpr Keyword<RightArg>   Placeholder::right_arg;
 constexpr Operator<Beside>    Placeholder::beside;
 constexpr Operator<Commute>   Placeholder::commute;
 constexpr Operator<Each>      Placeholder::each;
+constexpr Operator<Key>       Placeholder::key;
 constexpr Operator<Outer>     Placeholder::outer;
 constexpr Operator<Product>   Placeholder::product;
 constexpr Operator<Reduce>    Placeholder::reduce;
@@ -3593,6 +3752,11 @@ static void runSimpleTests()
   assert(_(_(_.and_, _.reduce, _.first, _.equal, _.right),2,2,3) == 0);
   assert(_(_.enlist, _("abc", "aabc", "bcccc")) == _("abcaabcbcccc"));
   assert(_(2, _.dfn(_.left_arg, _.right_arg), 3) == _(2,3));
+
+  assert(
+    _(_.dfn(_.left_arg, _.right_arg), _.key, "Banana") ==
+    _(3,2,_.reshape,'B', 1, 'a', _(2,4,6), 'n', _(3,5))
+  );
 }
 
 
@@ -3787,7 +3951,8 @@ static void testRedistributeCharacters()
   Placeholder _;
 
   Array s = _("abc", "aabc", "bcccc");
-  SHOW(_(_(_.enlist, s));
+  SHOW(_(_.enlist, s));
+  SHOW(_(_.dfn(_.left_arg, _.right_arg), _.key, _.enlist, s));
   assert(false);
 }
 #endif
