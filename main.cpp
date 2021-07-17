@@ -5,9 +5,15 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
+#define ADD_TEST 0
+
+#define SHOW(x) (cerr << #x << ": " << (x) << "\n")
+
 using std::cerr;
 using std::ostream;
 using Number = double;
+
+
 
 
 static int product(const vector<int> &arg)
@@ -464,40 +470,41 @@ struct Fork {
 
 
 namespace {
-struct Shape {};
-struct Reshape {};
-struct First {};
-struct Each {};
-struct Equal {};
-struct NotEqual {};
-struct Plus {};
-struct Minus {};
-struct Times {};
-struct Divide {};
-struct Power {};
-struct Greater {};
 struct And {};
-struct Iota {};
-struct Reduce {};
-struct Product {};
-struct Outer {};
-struct Beside {};
-struct Commute {};
-struct Roll {};
-struct Right {};
-struct Replicate {};
-struct Enclose {};
-struct Partition {};
-struct GradeUp {};
-struct MemberOf {};
-struct Not {};
-struct Empty {};
 struct Assign {};
-struct Drop {};
-struct RightArg {};
-struct Where {};
-struct Reverse {};
+struct Beside {};
 struct Catenate {};
+struct Commute {};
+struct Divide {};
+struct Drop {};
+struct Each {};
+struct Empty {};
+struct Enclose {};
+struct Enlist {};
+struct Equal {};
+struct First {};
+struct GradeUp {};
+struct Greater {};
+struct Iota {};
+struct MemberOf {};
+struct Minus {};
+struct Not {};
+struct NotEqual {};
+struct Outer {};
+struct Partition {};
+struct Plus {};
+struct Power {};
+struct Product {};
+struct Reduce {};
+struct Replicate {};
+struct Reshape {};
+struct Reverse {};
+struct Right {};
+struct RightArg {};
+struct Roll {};
+struct Shape {};
+struct Times {};
+struct Where {};
 }
 
 
@@ -985,6 +992,34 @@ namespace {
 Array evaluate(Values arg, Context &)
 {
   return makeArrayFromValues(std::move(arg));
+}
+}
+
+
+static void extractValuesTo(Values &values, Array &&a)
+{
+  if (isScalar(a)) {
+    values.push_back(std::move(a));
+    return;
+  }
+
+  for (Array &e : a.values()) {
+    extractValuesTo(values, std::move(e));
+  }
+}
+
+
+namespace {
+Array evaluate(
+ Atop<Function<Enlist>, Array> arg,
+ Context&
+)
+{
+  // Extract all the values
+  Values values;
+  extractValuesTo(values, std::move(arg.right));
+  const int n = values.size();
+  return Array( { n }, std::move(values) );
 }
 }
 
@@ -3320,40 +3355,41 @@ struct Placeholder {
     return makeExpr(context, std::forward<decltype(args)>(args)...);
   }
 
-  static constexpr Function<Shape>     shape = {};
-  static constexpr Function<Reshape>   reshape = {};
-  static constexpr Function<First>     first = {};
-  static constexpr Function<Equal>     equal = {};
-  static constexpr Function<NotEqual>  not_equal = {};
-  static constexpr Function<Plus>      plus = {};
-  static constexpr Function<Minus>     minus = {};
-  static constexpr Function<Times>     times = {};
-  static constexpr Function<Divide>    divide = {};
-  static constexpr Function<Power>     power = {};
-  static constexpr Function<Greater>   greater = {};
   static constexpr Function<And>       and_ = {};
-  static constexpr Function<Iota>      iota = {};
-  static constexpr Function<Roll>      roll = {};
-  static constexpr Function<Replicate> replicate = {};
-  static constexpr Function<MemberOf>  member_of = {};
-  static constexpr Function<Not>       isnot = {};
+  static constexpr Function<Catenate>  catenate = {};
+  static constexpr Function<Divide>    divide = {};
   static constexpr Function<Drop>      drop = {};
   static constexpr Function<Enclose>   enclose = {};
-  static constexpr Function<Partition> partition = {};
+  static constexpr Function<Enlist>    enlist = {};
+  static constexpr Function<Equal>     equal = {};
+  static constexpr Function<First>     first = {};
   static constexpr Function<GradeUp>   grade_up = {};
-  static constexpr Function<Where>     where = {};
+  static constexpr Function<Greater>   greater = {};
+  static constexpr Function<Iota>      iota = {};
+  static constexpr Function<MemberOf>  member_of = {};
+  static constexpr Function<Minus>     minus = {};
+  static constexpr Function<NotEqual>  not_equal = {};
+  static constexpr Function<Not>       isnot = {};
+  static constexpr Function<Partition> partition = {};
+  static constexpr Function<Plus>      plus = {};
+  static constexpr Function<Power>     power = {};
+  static constexpr Function<Replicate> replicate = {};
+  static constexpr Function<Reshape>   reshape = {};
   static constexpr Function<Reverse>   reverse = {};
-  static constexpr Function<Catenate>  catenate = {};
   static constexpr Function<Right>     right = {};
-  static constexpr Operator<Each>      each = {};
-  static constexpr Operator<Reduce>    reduce = {};
-  static constexpr Operator<Product>   product = {};
-  static constexpr Operator<Outer>     outer = {};
+  static constexpr Function<Roll>      roll = {};
+  static constexpr Function<Shape>     shape = {};
+  static constexpr Function<Times>     times = {};
+  static constexpr Function<Where>     where = {};
+  static constexpr Keyword<Assign>     assign = {};
+  static constexpr Keyword<Empty>      empty = {};
+  static constexpr Keyword<RightArg>   right_arg = {};
   static constexpr Operator<Beside>    beside = {};
   static constexpr Operator<Commute>   commute = {};
-  static constexpr Keyword<Empty>      empty = {};
-  static constexpr Keyword<Assign>     assign = {};
-  static constexpr Keyword<RightArg>   right_arg = {};
+  static constexpr Operator<Each>      each = {};
+  static constexpr Operator<Outer>     outer = {};
+  static constexpr Operator<Product>   product = {};
+  static constexpr Operator<Reduce>    reduce = {};
 
   template <typename ...Args>
   constexpr auto dfn(Args &&...args)
@@ -3372,40 +3408,41 @@ struct Placeholder {
 }
 
 
-constexpr Function<Shape>     Placeholder::shape;
-constexpr Function<Reshape>   Placeholder::reshape;
-constexpr Function<First>     Placeholder::first;
-constexpr Function<Equal>     Placeholder::equal;
-constexpr Function<NotEqual>  Placeholder::not_equal;
-constexpr Function<Plus>      Placeholder::plus;
-constexpr Function<Minus>     Placeholder::minus;
-constexpr Function<Times>     Placeholder::times;
-constexpr Function<Divide>    Placeholder::divide;
-constexpr Function<Power>     Placeholder::power;
-constexpr Function<Greater>   Placeholder::greater;
 constexpr Function<And>       Placeholder::and_;
-constexpr Function<Iota>      Placeholder::iota;
-constexpr Function<Roll>      Placeholder::roll;
-constexpr Function<Replicate> Placeholder::replicate;
-constexpr Function<Drop>      Placeholder::drop;
-constexpr Function<MemberOf>  Placeholder::member_of;
-constexpr Function<Not>       Placeholder::isnot;
-constexpr Function<Enclose>   Placeholder::enclose;
-constexpr Function<Partition> Placeholder::partition;
-constexpr Function<GradeUp>   Placeholder::grade_up;
-constexpr Function<Where>     Placeholder::where;
-constexpr Function<Reverse>   Placeholder::reverse;
 constexpr Function<Catenate>  Placeholder::catenate;
+constexpr Function<Divide>    Placeholder::divide;
+constexpr Function<Drop>      Placeholder::drop;
+constexpr Function<Enclose>   Placeholder::enclose;
+constexpr Function<Enlist>    Placeholder::enlist;
+constexpr Function<Equal>     Placeholder::equal;
+constexpr Function<First>     Placeholder::first;
+constexpr Function<GradeUp>   Placeholder::grade_up;
+constexpr Function<Greater>   Placeholder::greater;
+constexpr Function<Iota>      Placeholder::iota;
+constexpr Function<MemberOf>  Placeholder::member_of;
+constexpr Function<Minus>     Placeholder::minus;
+constexpr Function<NotEqual>  Placeholder::not_equal;
+constexpr Function<Not>       Placeholder::isnot;
+constexpr Function<Partition> Placeholder::partition;
+constexpr Function<Plus>      Placeholder::plus;
+constexpr Function<Power>     Placeholder::power;
+constexpr Function<Replicate> Placeholder::replicate;
+constexpr Function<Reshape>   Placeholder::reshape;
+constexpr Function<Reverse>   Placeholder::reverse;
 constexpr Function<Right>     Placeholder::right;
-constexpr Keyword<Empty>      Placeholder::empty;
+constexpr Function<Roll>      Placeholder::roll;
+constexpr Function<Shape>     Placeholder::shape;
+constexpr Function<Times>     Placeholder::times;
+constexpr Function<Where>     Placeholder::where;
 constexpr Keyword<Assign>     Placeholder::assign;
+constexpr Keyword<Empty>      Placeholder::empty;
 constexpr Keyword<RightArg>   Placeholder::right_arg;
-constexpr Operator<Each>      Placeholder::each;
-constexpr Operator<Reduce>    Placeholder::reduce;
-constexpr Operator<Product>   Placeholder::product;
-constexpr Operator<Outer>     Placeholder::outer;
 constexpr Operator<Beside>    Placeholder::beside;
 constexpr Operator<Commute>   Placeholder::commute;
+constexpr Operator<Each>      Placeholder::each;
+constexpr Operator<Outer>     Placeholder::outer;
+constexpr Operator<Product>   Placeholder::product;
+constexpr Operator<Reduce>    Placeholder::reduce;
 
 
 template <typename T>
@@ -3493,6 +3530,7 @@ static void runSimpleTests()
   assert(_(_.plus, _.commute, 3) == 6);
   assert(_(_(_.and_, _.reduce, _.first, _.equal, _.right),2,2,2) == 1);
   assert(_(_(_.and_, _.reduce, _.first, _.equal, _.right),2,2,3) == 0);
+  assert(_(_.enlist, _("abc", "aabc", "bcccc")) == _("abcaabcbcccc"));
 }
 
 
@@ -3681,6 +3719,18 @@ static void test3000()
 }
 
 
+#if ADD_TEST
+static void testRedistributeCharacters()
+{
+  Placeholder _;
+
+  Array s = _("abc", "aabc", "bcccc");
+  SHOW(_(_.enlist, s));
+  assert(false);
+}
+#endif
+
+
 int main()
 {
   runSimpleTests();
@@ -3689,4 +3739,7 @@ int main()
   testCircle();
   testGrille();
   test3000();
+#if ADD_TEST
+  testRedistributeCharacters();
+#endif
 }
