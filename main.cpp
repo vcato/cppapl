@@ -492,6 +492,7 @@ struct Iota {};
 struct LeftArg {};
 struct MemberOf {};
 struct Minus {};
+struct Modulus {};
 struct Not {};
 struct NotEqual {};
 struct Outer {};
@@ -885,6 +886,12 @@ auto makeBinary(Function<Times>)
 auto makeBinary(Function<Divide>)
 {
   return [](Number a, Number b) { return a / b; };
+}
+
+
+auto makeBinary(Function<Modulus>)
+{
+  return[](Number a, Number b) { return std::fmod(b,a); };
 }
 
 
@@ -1655,6 +1662,14 @@ Array evaluate(Fork<Array,Function<Plus>,Array> arg, Context &)
 
 namespace {
 Array evaluate(Fork<Array,Function<Minus>,Array> arg, Context &)
+{
+  return evaluateNumberFork(arg);
+}
+}
+
+
+namespace {
+Array evaluate(Fork<Array,Function<Modulus>,Array> arg, Context &)
 {
   return evaluateNumberFork(arg);
 }
@@ -3727,6 +3742,7 @@ struct Placeholder {
   static constexpr Function<Iota>      iota = {};
   static constexpr Function<MemberOf>  member_of = {};
   static constexpr Function<Minus>     minus = {};
+  static constexpr Function<Modulus>   modulus = {};
   static constexpr Function<NotEqual>  not_equal = {};
   static constexpr Function<Not>       isnot = {};
   static constexpr Function<Partition> partition = {};
@@ -3783,6 +3799,7 @@ constexpr Function<Greater>   Placeholder::greater;
 constexpr Function<Iota>      Placeholder::iota;
 constexpr Function<MemberOf>  Placeholder::member_of;
 constexpr Function<Minus>     Placeholder::minus;
+constexpr Function<Modulus>   Placeholder::modulus;
 constexpr Function<NotEqual>  Placeholder::not_equal;
 constexpr Function<Not>       Placeholder::isnot;
 constexpr Function<Partition> Placeholder::partition;
@@ -3904,6 +3921,7 @@ static void runSimpleTests()
   );
 
   assert(_(_.tally, 1, 4, 5) == _(3));
+  assert(_(2, _.modulus, 3) == 1);
 }
 
 
@@ -4108,6 +4126,7 @@ static void testRedistributeCharacters()
 #endif
 
   SHOW(result);
+  SHOW(_(_.tally, s));
   assert(false);
 }
 #endif
