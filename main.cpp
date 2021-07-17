@@ -1336,16 +1336,13 @@ Array evaluate(Keyword<RightArg> /*arg*/, Context &context)
 
 
 namespace {
-Array evaluate(Atop< Keyword<LeftArg>, Array> arg, Context& context)
+Array evaluate(Keyword<LeftArg>, Context& context)
 {
   if (!context.left_arg_ptr) {
     assert(false);
   }
 
-  Values values;
-  values.push_back(*context.left_arg_ptr);
-  values.push_back(std::move(arg.right));
-  return evaluate(std::move(values), context);
+  return Array(*context.left_arg_ptr);
 }
 }
 
@@ -2385,15 +2382,6 @@ join(Keyword<RightArg> left, Atop<Function<T>, Array> right, Context &)
 
 
 namespace {
-Atop<Keyword<LeftArg>, Array>
-join(Keyword<LeftArg> left, Array right, Context &)
-{
-  return { std::move(left), std::move(right) };
-}
-}
-
-
-namespace {
 template <typename T>
 Partial<Operator<T>,Array>
 join(Operator<T> left, Values right, Context &)
@@ -3212,6 +3200,23 @@ evaluate(
 }
 }
 
+
+
+#if ADD_TEST
+namespace {
+template <typename T>
+Fork<Array, Function<T>, Array>
+join(
+  Keyword<LeftArg> left,
+  Atop<Function<T>,Array> right,
+  Context& context
+)
+{
+  Array a = evaluate(left, context);
+  return fork(std::move(a), std::move(right.left), std::move(right.right));
+}
+}
+#endif
 
 
 template <typename...Args>
