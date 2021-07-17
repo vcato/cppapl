@@ -1233,6 +1233,10 @@ Array evaluate(Fork<Array, Function<Catenate>, Array> arg, Context &)
     return makeArrayFromValues(std::move(values));
   }
 
+  if (isScalar(arg.left) && isScalar(arg.right)) {
+    return makeVector({ std::move(arg.left), std::move(arg.right)});
+  }
+
   cerr << "isVector(arg.left): " << isVector(arg.left) << "\n";
   cerr << "isVector(arg.right): " << isVector(arg.right) << "\n";
   assert(false);
@@ -1953,6 +1957,35 @@ Array
 evaluate(
   Fork<
     Array,
+    Function<
+      Fork<
+        Function<F>,
+        Operator<Beside>,
+        Function<G>
+      >
+    >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  Array a1 = std::move(arg.left);
+  Array a2 = std::move(arg.right);
+  auto f1 = std::move(arg.mid.body.left);
+  auto f2 = std::move(arg.mid.body.right);
+  Array a = evaluate(atop(std::move(f2), std::move(a2)), context);
+  Array b = evaluate(fork(std::move(a1),std::move(f1),std::move(a)), context);
+  return b;
+}
+}
+
+
+namespace {
+template <typename F, typename G>
+Array
+evaluate(
+  Fork<
+    Array,
     Fork<
       Function<F>,
       Operator<Beside>,
@@ -1965,11 +1998,13 @@ evaluate(
 {
   Array a1 = std::move(arg.left);
   Array a2 = std::move(arg.right);
-  auto f1 = std::move(arg.mid.left);
-  auto f2 = std::move(arg.mid.right);
-  Array a = evaluate(atop(std::move(f2), std::move(a2)), context);
-  Array b = evaluate(fork(std::move(a1),std::move(f1),std::move(a)), context);
-  return b;
+  Fork<Function<F>, Operator<Beside>, Function<G>> f = std::move(arg.mid);
+
+  return
+    evaluate(
+      fork(std::move(a1), function(std::move(f)), std::move(a2)),
+      context
+    );
 }
 }
 
@@ -3219,6 +3254,45 @@ join(
 #endif
 
 
+#if ADD_TEST
+namespace {
+Fork<
+  Fork<Function<Right>, Operator<Beside>, Function<Tally>>,
+  Operator<Key>,
+  Array
+>
+join(
+  Function<Right> left,
+  Partial<
+    Operator<Beside>,
+    Atop<
+      Atop<
+        Function<Tally>,
+        Operator<Key>
+      >,
+      Array
+    >
+  > right,
+  Context&
+)
+{
+  Function<Right> a = std::move(left);
+  Operator<Beside> b = std::move(right.left);
+  Function<Tally> c = std::move(right.right.left.left);
+  Operator<Key> d = std::move(right.right.left.right);
+  Array e = std::move(right.right.right);
+
+  return
+    fork(
+      fork(std::move(a), std::move(b), std::move(c)),
+      std::move(d),
+      std::move(e)
+    );
+}
+}
+#endif
+
+
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
@@ -3288,6 +3362,10 @@ static int lengthOf(const Array &a)
     return a.shape()[0];
   }
 
+  if (isScalar(a)) {
+    return 1;
+  }
+
   SHOW(a.shape());
   assert(false);
 }
@@ -3309,6 +3387,12 @@ static Values extendedValues(Array a, int width)
     }
 
     assert(false);
+  }
+
+  if (isScalar(a)) {
+    if (width == 1) {
+      return { std::move(a) };
+    }
   }
 
   SHOW(a);
@@ -3401,8 +3485,13 @@ evaluate(
       appendTo(values, extendedValues(std::move(e), width));
     }
 
-    int height = raw_values.size();
-    return Array( { height, width }, std::move(values));
+    if (width == 1) {
+      return makeVector(std::move(values));
+    }
+    else {
+      int height = raw_values.size();
+      return Array( { height, width }, std::move(values));
+    }
   }
 
   assert(false);
@@ -3424,6 +3513,38 @@ evaluate(
   assert(false);
 }
 }
+
+
+#if ADD_TEST
+namespace {
+Array
+evaluate(
+  Fork<
+    Fork<
+      Function<Right>,
+      Operator<Beside>,
+      Function<Tally>
+    >,
+    Operator<Key>,
+    Array
+  > arg,
+  Context& context
+)
+{
+  return
+    evaluate(
+      atop(
+        atop(
+          function(std::move(arg.left)),
+          std::move(arg.mid)
+        ),
+        std::move(arg.right)
+      ),
+      context
+    );
+}
+}
+#endif
 
 
 template <typename F>
@@ -3979,13 +4100,14 @@ static void testRedistributeCharacters()
   Array s = _("abc", "aabc", "bcccc");
   SHOW(_(_.enlist, s));
 
+#if 1
+  Array result = _(_.right, _.beside, _.tally, _.key, _.enlist, s);
+#else
   Array result =
-    _(_.dfn(_.left_arg, _.catenate, _.tally, _.right_arg), _.key, _.enlist, s);
+    _(_.dfn(_.tally, _.right_arg), _.key, _.enlist, s);
+#endif
 
-  SHOW(
-    result
-  );
-
+  SHOW(result);
   assert(false);
 }
 #endif
