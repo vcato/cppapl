@@ -507,6 +507,7 @@ struct Right {};
 struct RightArg {};
 struct Roll {};
 struct Shape {};
+struct Tally {};
 struct Times {};
 struct Where {};
 }
@@ -3404,6 +3405,22 @@ evaluate(
 }
 
 
+namespace {
+Array
+evaluate(
+  Atop< Function<Tally>, Array > arg,
+  Context&
+)
+{
+  if (isVector(arg.right)) {
+    return makeArrayFromValues({arg.right.shape()[0]});
+  }
+
+  assert(false);
+}
+}
+
+
 template <typename F>
 static auto evaluateExprInContext(const F &f, Context &context)
 {
@@ -3595,6 +3612,7 @@ struct Placeholder {
   static constexpr Function<Right>     right = {};
   static constexpr Function<Roll>      roll = {};
   static constexpr Function<Shape>     shape = {};
+  static constexpr Function<Tally>     tally = {};
   static constexpr Function<Times>     times = {};
   static constexpr Function<Where>     where = {};
   static constexpr Keyword<Assign>     assign = {};
@@ -3650,6 +3668,7 @@ constexpr Function<Reverse>   Placeholder::reverse;
 constexpr Function<Right>     Placeholder::right;
 constexpr Function<Roll>      Placeholder::roll;
 constexpr Function<Shape>     Placeholder::shape;
+constexpr Function<Tally>     Placeholder::tally;
 constexpr Function<Times>     Placeholder::times;
 constexpr Function<Where>     Placeholder::where;
 constexpr Keyword<Assign>     Placeholder::assign;
@@ -3757,6 +3776,8 @@ static void runSimpleTests()
     _(_.dfn(_.left_arg, _.right_arg), _.key, "Banana") ==
     _(3,2,_.reshape,'B', 1, 'a', _(2,4,6), 'n', _(3,5))
   );
+
+  assert(_(_.tally, 1, 4, 5) == _(3));
 }
 
 
@@ -3952,7 +3973,14 @@ static void testRedistributeCharacters()
 
   Array s = _("abc", "aabc", "bcccc");
   SHOW(_(_.enlist, s));
-  SHOW(_(_.dfn(_.left_arg, _.right_arg), _.key, _.enlist, s));
+
+  Array result =
+    _(_.dfn(_.left_arg, _.catenate, _.tally, _.right_arg), _.key, _.enlist, s);
+
+  SHOW(
+    result
+  );
+
   assert(false);
 }
 #endif
