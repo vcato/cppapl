@@ -7,6 +7,7 @@
 #include "vectorio.hpp"
 
 #define SHOW(x) (cerr << #x << ": " << (x) << "\n")
+#define ADD_TEST 0
 
 using std::cerr;
 using std::ostream;
@@ -29,7 +30,6 @@ public:
   using Shape = vector<int>;
   using Values = vector<Array>;
 
-public:
   Array(Number arg)
   : _type(Type::number), number(arg)
   {
@@ -2041,6 +2041,15 @@ struct MakeRValue<const T&> {
 
 
 template <typename T>
+struct MakeRValue<Function<T> &> {
+  Function<T> operator()(Function<T> &arg) const
+  {
+    return arg;
+  }
+};
+
+
+template <typename T>
 struct MakeRValue<T&> {
   Var operator()(T &arg) const
   {
@@ -3928,6 +3937,21 @@ static void runSimpleTests()
 
   assert(_(_.tally, 1, 4, 5) == _(3));
   assert(_(2, _.modulus, 3) == 1);
+
+#if ADD_TEST
+  {
+    auto solve = _.dfn(1);
+
+    auto f = [](auto x) {
+      SHOW(x);
+    };
+
+    solve.body.f(f);
+    Array a = _(solve, 1);
+    SHOW(a);
+    assert(a == _(1));
+  }
+#endif
 }
 
 
@@ -4131,7 +4155,20 @@ static void testRedistributeCharacters()
       _.enlist, s
     );
 
+#if 0
+  auto solve =
+    _.dfn(
+      _.and_, _.reduce,
+      0, _.equal,
+      _(_.tally, s), _.modulus,
+      _.right, _.beside, _.tally, _.key,
+      _.enlist, _.right_arg
+    );
+
+  assert(_(solve, s) == _(1));
+#else
   assert(result == _(1));
+#endif
 }
 
 
