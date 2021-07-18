@@ -6,8 +6,6 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
-#define ADD_TEST 0
-
 #define SHOW(x) (cerr << #x << ": " << (x) << "\n")
 
 using std::cerr;
@@ -3178,6 +3176,20 @@ join(
 }
 
 
+namespace {
+template <typename A, typename B, typename C>
+auto
+join(
+  Function<Modulus> left,
+  Fork<A, B, C> right,
+  Context& context
+)
+{
+  return atop(std::move(left), evaluate(std::move(right), context));
+}
+}
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
@@ -3252,7 +3264,6 @@ evaluate(
 
 
 
-#if ADD_TEST
 namespace {
 template <typename T>
 Fork<Array, Function<T>, Array>
@@ -3266,10 +3277,8 @@ join(
   return fork(std::move(a), std::move(right.left), std::move(right.right));
 }
 }
-#endif
 
 
-#if ADD_TEST
 namespace {
 Fork<
   Fork<Function<Right>, Operator<Beside>, Function<Tally>>,
@@ -3305,7 +3314,6 @@ join(
     );
 }
 }
-#endif
 
 
 template <typename...Args>
@@ -3530,7 +3538,6 @@ evaluate(
 }
 
 
-#if ADD_TEST
 namespace {
 Array
 evaluate(
@@ -3559,7 +3566,6 @@ evaluate(
     );
 }
 }
-#endif
 
 
 template <typename F>
@@ -4110,26 +4116,23 @@ static void test3000()
 }
 
 
-#if ADD_TEST
 static void testRedistributeCharacters()
 {
   Placeholder _;
 
   Array s = _("abc", "aabc", "bcccc");
-  SHOW(_(_.enlist, s));
 
-#if 1
-  Array result = _(_.right, _.beside, _.tally, _.key, _.enlist, s);
-#else
   Array result =
-    _(_.dfn(_.tally, _.right_arg), _.key, _.enlist, s);
-#endif
+    _(
+      _.and_, _.reduce,
+      0, _.equal,
+      _(_.tally, s), _.modulus,
+      _.right, _.beside, _.tally, _.key,
+      _.enlist, s
+    );
 
-  SHOW(result);
-  SHOW(_(_.tally, s));
-  assert(false);
+  assert(result == _(1));
 }
-#endif
 
 
 int main()
@@ -4140,7 +4143,5 @@ int main()
   testCircle();
   testGrille();
   test3000();
-#if ADD_TEST
   testRedistributeCharacters();
-#endif
 }
