@@ -4195,7 +4195,6 @@ static void testRedistributeCharacters()
       _.enlist, s
     );
 
-#if 0
   auto solve =
     _.dfn(
       _.and_, _.reduce,
@@ -4206,9 +4205,6 @@ static void testRedistributeCharacters()
     );
 
   assert(_(solve, s) == _(1));
-#else
-  assert(result == _(1));
-#endif
 }
 
 
