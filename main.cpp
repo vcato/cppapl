@@ -7,7 +7,6 @@
 #include "vectorio.hpp"
 
 #define SHOW(x) (cerr << #x << ": " << (x) << "\n")
-#define ADD_TEST 0
 
 using std::cerr;
 using std::ostream;
@@ -404,29 +403,29 @@ struct Context {
 
 namespace {
 template <typename F>
-struct Expr {
+struct BoundExpr {
   Context &context;
   F f;
 
-  Expr(Context &context, F f)
+  BoundExpr(Context &context, F f)
   : context(context), f(std::move(f))
   {
   }
 
   bool evaluated = false;
 
-  Expr(const Expr &) = delete;
-  void operator=(const Expr &) = delete;
-  void operator=(Expr &&) = delete;
+  BoundExpr(const BoundExpr &) = delete;
+  void operator=(const BoundExpr &) = delete;
+  void operator=(BoundExpr &&) = delete;
 
-  Expr(Expr &&arg)
+  BoundExpr(BoundExpr &&arg)
   : context(arg.context),
     f(std::move(arg.f))
   {
     arg.evaluated = true;
   }
 
-  ~Expr();
+  ~BoundExpr();
 
   operator Array() &&;
 };
@@ -2068,6 +2067,24 @@ struct MakeRValue<const char (&)[n]> {
 
 
 namespace {
+template <typename F>
+struct Expr {
+  F f;
+};
+}
+
+
+template <typename F>
+struct MakeRValue<BoundExpr<F>> {
+  Expr<F> operator()(BoundExpr<F> expr) const
+  {
+    expr.evaluated = true;
+    return { std::move(expr.f) };
+  }
+};
+
+
+namespace {
 template <typename T>
 Atop<Function<T>,Array> join(Function<T> left, Array right, Context &)
 {
@@ -3578,7 +3595,7 @@ evaluate(
 
 
 template <typename F>
-static auto evaluateExprInContext(const F &f, Context &context)
+static auto evaluateDeferredInContext(const F &f, Context &context)
 {
   auto eval = [&](auto &&...args)
   {
@@ -3593,12 +3610,21 @@ static auto evaluateExprInContext(const F &f, Context &context)
 }
 
 
+namespace {
+template <typename F>
+auto evaluate(Expr<F> expr, Context &context)
+{
+  return evaluateDeferredInContext(expr.f, context);
+}
+}
+
+
 template <typename T>
 static Array evaluateDfn(const Dfn<T> &dfn, Array arg, Context &context)
 {
   Context c{context.random_engine};
   c.right_arg_ptr = &arg;
-  return evaluateExprInContext(dfn.f, c);
+  return evaluateDeferredInContext(dfn.f, c);
 }
 
 
@@ -3611,7 +3637,7 @@ evaluateDfn2(
   Context c{context.random_engine};
   c.left_arg_ptr = &left_arg;
   c.right_arg_ptr = &right_arg;
-  return evaluateExprInContext(dfn.f, c);
+  return evaluateDeferredInContext(dfn.f, c);
 }
 
 
@@ -3625,9 +3651,9 @@ Array evaluate(Atop<Function<Dfn<T>>,Array> arg, Context &context)
 
 
 template <typename F>
-static auto evaluateExpr(Expr<F> &&expr)
+static auto evaluateExpr(BoundExpr<F> &&expr)
 {
-  auto result = evaluateExprInContext(expr.f, expr.context);
+  auto result = evaluateDeferredInContext(expr.f, expr.context);
   expr.evaluated = true;
   return result;
 }
@@ -3647,7 +3673,7 @@ template <typename T>
 Atop<Array,Index<Array>>
 join(Var left, Index<Expr<T>> right, Context &context)
 {
-  Array i = evaluateExpr(std::move(right.arg));
+  Array i = evaluateDeferredInContext(std::move(right.arg.f), context);
   return join(Array(*left.ptr), Index<Array>{std::move(i)}, context);
 }
 }
@@ -3658,14 +3684,14 @@ template <typename T>
 Atop<Array,Index<Array>>
 join(Array left, Index<Expr<T>> right, Context &context)
 {
-  Array i = evaluateExpr(std::move(right.arg));
+  Array i = evaluateDeferredInContext(std::move(right.arg.f), context);
   return join(std::move(left), Index<Array>{std::move(i)}, context);
 }
 }
 
 
 template <typename F>
-Expr<F>::~Expr()
+BoundExpr<F>::~BoundExpr()
 {
   if (!evaluated) {
     evaluateExpr(std::move(*this));
@@ -3677,9 +3703,9 @@ Expr<F>::~Expr()
 
 namespace {
 template <typename F>
-auto evaluate(Expr<F> expr, Context &context)
+auto evaluate(BoundExpr<F> expr, Context &context)
 {
-  auto result = evaluateExprInContext(expr.f, context);
+  auto result = evaluateDeferredInContext(expr.f, context);
   expr.evaluated = true;
   return result;
 }
@@ -3690,7 +3716,12 @@ namespace {
 template <typename T, typename F>
 auto join(T left, Expr<F> right, Context &context)
 {
-  return join(std::move(left), evaluateExpr(std::move(right)), context);
+  return
+    join(
+      std::move(left),
+      evaluateDeferredInContext(std::move(right.f), context),
+      context
+    );
 }
 }
 
@@ -3718,18 +3749,33 @@ join(
 }
 
 
-template <typename ...Args>
-static auto defer(Args &&...args)
+template <typename... Args>
+static auto defer2(Args ...args)
 {
-  return [&](auto f){ return f(std::forward<decltype(args)>(args)...); };
+  return [=](auto f){ return f(args...); };
 }
 
 
 template <typename ...Args>
-static auto makeExpr(Context &context, Args &&...args)
+static auto defer(Args &&...args)
+{
+  return defer2(MakeRValue<Args>()(std::forward<Args>(args))...);
+}
+
+
+template <typename ...Args>
+static auto makeExpr(Args &&...args)
 {
   auto f = defer(std::forward<Args>(args)...);
-  return Expr<decltype(f)>{context, std::move(f)};
+  return Expr<decltype(f)>{std::move(f)};
+}
+
+
+template <typename ...Args>
+static auto makeBoundExpr(Context &context, Args &&...args)
+{
+  auto f = defer(std::forward<Args>(args)...);
+  return BoundExpr<decltype(f)>{context, std::move(f)};
 }
 
 
@@ -3741,7 +3787,7 @@ struct Placeholder {
   template <typename ...Args>
   auto operator()(Args &&...args)
   {
-    return makeExpr(context, std::forward<decltype(args)>(args)...);
+    return makeBoundExpr(context, std::forward<decltype(args)>(args)...);
   }
 
   static constexpr Function<And>       and_ = {};
@@ -3794,7 +3840,7 @@ struct Placeholder {
   template <typename ...Args>
   constexpr auto index(Args &&...args)
   {
-    auto x = makeExpr(context, std::forward<decltype(args)>(args)...);
+    auto x = makeExpr(std::forward<decltype(args)>(args)...);
     return Index<decltype(x)>{std::move(x)};
   }
 };
@@ -3852,14 +3898,14 @@ static std::string str(const T &x)
 
 
 template <typename F>
-static std::string str(Expr<F> expr)
+static std::string str(BoundExpr<F> expr)
 {
   return str(evaluateExpr(std::move(expr)));
 }
 
 
 template <typename F>
-Expr<F>::operator Array() &&
+BoundExpr<F>::operator Array() &&
 {
   return evaluateExpr(std::move(*this));
 }
@@ -3937,21 +3983,15 @@ static void runSimpleTests()
 
   assert(_(_.tally, 1, 4, 5) == _(3));
   assert(_(2, _.modulus, 3) == 1);
+}
 
-#if ADD_TEST
-  {
-    auto solve = _.dfn(1);
 
-    auto f = [](auto x) {
-      SHOW(x);
-    };
-
-    solve.body.f(f);
-    Array a = _(solve, 1);
-    SHOW(a);
-    assert(a == _(1));
-  }
-#endif
+static void testUsingDfnStoredInAVariable()
+{
+  Placeholder _;
+  auto solve = _.dfn(1);
+  Array a = _(solve, 1);
+  assert(a == _(1));
 }
 
 
@@ -4175,6 +4215,7 @@ static void testRedistributeCharacters()
 int main()
 {
   runSimpleTests();
+  testUsingDfnStoredInAVariable();
   testAssignment();
   testExamples();
   testCircle();
