@@ -6,6 +6,8 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
+#define CHANGE_TEST 0
+
 #define SHOW(x) (cerr << #x << ": " << (x) << "\n")
 
 using std::cerr;
@@ -3216,6 +3218,192 @@ join(
 }
 
 
+#if CHANGE_TEST
+namespace {
+Fork<
+  Atop<
+    Function<Tally>,
+    Operator<Key>
+  >,
+  Operator<Beside>,
+  Function<Enlist>
+>
+join(
+  Function<Tally> left,
+  Partial<
+    Operator<Key>,
+    Partial<
+      Operator<Beside>,
+      Function<Enlist>
+    >
+  > right,
+  Context&
+)
+{
+  Function<Tally> tally = std::move(left);
+  Operator<Key> key = std::move(right.left);
+  Operator<Beside> beside = std::move(right.right.left);
+  Function<Enlist> enlist = std::move(right.right.right);
+
+  return
+    fork(
+      atop(
+        std::move(tally),
+        std::move(key)
+      ),
+      std::move(beside),
+      std::move(enlist)
+    );
+}
+}
+#endif
+
+
+#if CHANGE_TEST
+namespace {
+Atop<
+  Function<Right>,
+  Fork<
+    Function<
+      Atop<
+        Function<Tally>,
+        Operator<Key>
+      >
+    >,
+    Operator<Beside>,
+    Function<Enlist>
+  >
+>
+join(
+  Function<Right> left,
+  Partial<
+    Operator<Beside>,
+    Fork<
+      Atop<
+        Function<Tally>,
+        Operator<Key>
+      >,
+      Operator<Beside>,
+      Function<Enlist>
+    >
+  > right,
+  Context&
+)
+{
+  Function<Right> right2 = std::move(left);
+  Function<Tally> tally = std::move(right.right.left.left);
+  Operator<Key> key = std::move(right.right.left.right);
+  Operator<Beside> beside = std::move(right.right.mid);
+  Function<Enlist> enlist = std::move(right.right.right);
+
+  return
+    atop(
+      std::move(right2),
+      fork(
+        function(
+          atop(
+            std::move(tally),
+            std::move(key)
+          )
+        ),
+        std::move(beside),
+        std::move(enlist)
+      )
+    );
+}
+}
+#endif
+
+
+#if CHANGE_TEST
+namespace {
+Fork<
+  Function<Modulus>,
+  Function<Right>,
+  Function<
+    Atop<
+      Function<
+        Atop<
+          Function<Tally>,
+          Operator<Key>
+        >
+      >,
+      Function<Enlist>
+    >
+  >
+>
+join(
+  Function<Modulus> left,
+  Atop<
+    Function<Right>,
+    Fork<
+      Function<
+        Atop<
+          Function<Tally>,
+          Operator<Key>
+        >
+      >,
+      Operator<Beside>,
+      Function<Enlist>
+    >
+  > right,
+  Context&
+)
+{
+  Function<Modulus> modulus = std::move(left);
+  Function<Right> right2 = std::move(right.left);
+  Function<Tally> tally = std::move(right.right.left.body.left);
+  Operator<Key> key = std::move(right.right.left.body.right);
+  Function<Enlist> enlist = std::move(right.right.right);
+
+  return
+    fork(
+      std::move(modulus),
+      std::move(right2),
+      function(
+        atop(
+          function(
+            atop(
+              std::move(tally),
+              std::move(key)
+            )
+          ),
+          std::move(enlist)
+        )
+      )
+    );
+}
+}
+#endif
+
+
+#if CHANGE_TEST
+namespace {
+join(
+  Function<Tally>,
+  Fork<
+    Function<Modulus>,
+    Function<Right>,
+    Function<
+      Atop<
+        Function<
+          Atop<
+            Function<Tally>,
+            Operator<Key>
+          >
+        >,
+        Function<Enlist>
+      >
+    >
+  >,
+  Context&
+)
+{
+}
+}
+#endif
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
@@ -4186,15 +4374,17 @@ static void testRedistributeCharacters()
 
   Array s = _("abc", "aabc", "bcccc");
 
-  Array result =
+#if CHANGE_TEST
+  auto solve =
     _(
       _.and_, _.reduce,
       0, _.equal,
-      _(_.tally, s), _.modulus,
-      _.right, _.beside, _.tally, _.key,
-      _.enlist, s
+      _(_.tally, _.modulus, _.right,
+        _.beside, _.tally, _.key,
+        _.beside, _.enlist
+      )
     );
-
+#else
   auto solve =
     _.dfn(
       _.and_, _.reduce,
@@ -4203,6 +4393,7 @@ static void testRedistributeCharacters()
       _.right, _.beside, _.tally, _.key,
       _.enlist, _.right_arg
     );
+#endif
 
   assert(_(solve, s) == _(1));
 }
