@@ -140,6 +140,8 @@ public:
         return areEqual(a.values()[0], b);
       }
 
+      SHOW(a.shape());
+      SHOW(b.asNumber());
       assert(false);
     }
 
@@ -2050,6 +2052,17 @@ struct MakeRValue<Function<T> &> {
 };
 
 
+#if 0
+Var MakeRValue<T&>::operator()(T&) const [
+  with T = BoundExpr<
+    defer2(Args ...) [
+      with Args = {Function<And>, Operator<Reduce>, int, Function<Equal>, Expr<defer2(Args ...) [with Args = {Function<Tally>, Function<Modulus>, Function<Right>, Operator<Beside>, Function<Tally>, Operator<Key>, Operator<Beside>, Function<Enlist>}]::<lambda(auto:6)> >}
+    ]::<lambda(auto:6)>
+  >
+]’:
+#endif
+
+
 template <typename T>
 struct MakeRValue<T&> {
   Var operator()(T &arg) const
@@ -2082,6 +2095,15 @@ struct MakeRValue<BoundExpr<F>> {
   {
     expr.evaluated = true;
     return { std::move(expr.f) };
+  }
+};
+
+
+template <typename F>
+struct MakeRValue<BoundExpr<F> &> {
+  Expr<F> operator()(const BoundExpr<F> &expr) const
+  {
+    return { expr.f };
   }
 };
 
@@ -3321,13 +3343,14 @@ Fork<
   Function<Modulus>,
   Function<Right>,
   Function<
-    Atop<
+    Fork<
       Function<
         Atop<
           Function<Tally>,
           Operator<Key>
         >
       >,
+      Operator<Beside>,
       Function<Enlist>
     >
   >
@@ -3354,6 +3377,7 @@ join(
   Function<Right> right2 = std::move(right.left);
   Function<Tally> tally = std::move(right.right.left.body.left);
   Operator<Key> key = std::move(right.right.left.body.right);
+  Operator<Beside> beside = std::move(right.right.mid);
   Function<Enlist> enlist = std::move(right.right.right);
 
   return
@@ -3361,13 +3385,14 @@ join(
       std::move(modulus),
       std::move(right2),
       function(
-        atop(
+        fork(
           function(
             atop(
               std::move(tally),
               std::move(key)
             )
           ),
+          std::move(beside),
           std::move(enlist)
         )
       )
@@ -3377,7 +3402,7 @@ join(
 #endif
 
 
-#if CHANGE_TEST
+#if 0
 namespace {
 join(
   Function<Tally>,
@@ -3399,6 +3424,206 @@ join(
   Context&
 )
 {
+}
+}
+#endif
+
+
+#if CHANGE_TEST
+namespace {
+Atop<
+  Function<Tally>,
+  Fork<
+    Function<Modulus>,
+    Function<Right>,
+    Function<
+      Fork<
+        Function<
+          Atop<
+            Function<Tally>,
+            Operator<Key>
+          >
+        >,
+        Operator<Beside>,
+        Function<Enlist>
+      >
+    >
+  >
+>
+join(
+  Function<Tally> left,
+  Fork<
+    Function<Modulus>,
+    Function<Right>,
+    Function<
+      Fork<
+        Function<
+          Atop<
+            Function<Tally>,
+            Operator<Key>
+          >
+        >,
+        Operator<Beside>,
+        Function<Enlist>
+      >
+    >
+  > right,
+  Context&
+)
+{
+  return atop(std::move(left), std::move(right));
+}
+}
+#endif
+
+
+#if CHANGE_TEST
+namespace {
+Fork<
+  Array,
+  Function<Equal>,
+  Function<
+    Atop<
+      Function<Tally>,
+      Function<
+        Fork<
+          Function<Modulus>,
+          Function<Right>,
+          Function<
+            Fork<
+              Function<
+                Atop<
+                  Function<Tally>,
+                  Operator<Key>
+                >
+              >,
+              Operator<Beside>,
+              Function<Enlist>
+            >
+          >
+        >
+      >
+    >
+  >
+>
+join(
+  Array left,
+  Atop<
+    Function<Equal>,
+    Function<
+      Atop<
+        Function<Tally>,
+        Function<
+          Fork<
+            Function<Modulus>,
+            Function<Right>,
+            Function<
+              Fork<
+                Function<
+                  Atop<
+                    Function<Tally>,
+                    Operator<Key>
+                  >
+                >,
+                Operator<Beside>,
+                Function<Enlist>
+              >
+            >
+          >
+        >
+      >
+    >
+  > right,
+  Context&
+)
+{
+  Function<Equal> equal = std::move(right.left);
+  return fork(std::move(left), std::move(equal), std::move(right.right));
+}
+}
+#endif
+
+
+#if CHANGE_TEST
+namespace {
+Atop<
+  Atop<
+    Function<And>,
+    Operator<Reduce>
+  >,
+  Function<
+    Fork<
+      Array,
+      Function<Equal>,
+      Function<
+        Atop<
+          Function<Tally>,
+          Function<
+            Fork<
+              Function<Modulus>,
+              Function<Right>,
+              Function<
+                Fork<
+                  Function<
+                    Atop<
+                      Function<Tally>,
+                      Operator<Key>
+                    >
+                  >,
+                  Operator<Beside>,
+                  Function<Enlist>
+                >
+              >
+            >
+          >
+        >
+      >
+    >
+  >
+>
+join(
+  Function<And> left,
+  Partial<
+    Operator<Reduce>,
+    Fork<
+      Array,
+      Function<Equal>,
+      Function<
+        Atop<
+          Function<Tally>,
+          Function<
+            Fork<
+              Function<Modulus>,
+              Function<Right>,
+              Function<
+                Fork<
+                  Function<
+                    Atop<
+                      Function<Tally>,
+                      Operator<Key>
+                    >
+                  >,
+                  Operator<Beside>,
+                  Function<Enlist>
+                >
+              >
+            >
+          >
+        >
+      >
+    >
+  > right,
+  Context&
+)
+{
+  return
+    atop(
+      atop(
+        std::move(left),
+        std::move(right.left)
+      ),
+      function(std::move(right.right))
+    );
 }
 }
 #endif
@@ -3528,6 +3753,60 @@ join(
     );
 }
 }
+
+
+#if CHANGE_TEST
+namespace {
+Function<
+  Atop<
+    Function<Tally>,
+    Function<
+      Fork<
+        Function<Modulus>,
+        Function<Right>,
+        Function<
+          Fork<
+            Function<
+              Atop<
+                Function<Tally>,
+                Operator<Key>
+              >
+            >,
+            Operator<Beside>,
+            Function<Enlist>
+          >
+        >
+      >
+    >
+  >
+>
+evaluate(
+  Atop<
+    Function<Tally>,
+    Fork<
+      Function<Modulus>,
+      Function<Right>,
+      Function<
+        Fork<
+          Function<
+            Atop<
+              Function<Tally>,
+              Operator<Key>
+            >
+          >,
+          Operator<Beside>,
+          Function<Enlist>
+        >
+      >
+    >
+  > arg,
+  Context&
+)
+{
+  return function(atop(std::move(arg.left), function(std::move(arg.right))));
+}
+}
+#endif
 
 
 template <typename...Args>
@@ -4174,6 +4453,14 @@ static void runSimpleTests()
 }
 
 
+static void testUsingFunctionStoredInAVariable()
+{
+  Placeholder _;
+  auto f = _(_.shape);
+  assert(_(f,1) == _(_.shape, 1));
+}
+
+
 static void testUsingDfnStoredInAVariable()
 {
   Placeholder _;
@@ -4402,6 +4689,7 @@ static void testRedistributeCharacters()
 int main()
 {
   runSimpleTests();
+  testUsingFunctionStoredInAVariable();
   testUsingDfnStoredInAVariable();
   testAssignment();
   testExamples();
