@@ -3629,6 +3629,71 @@ join(
 #endif
 
 
+#if 0
+join(
+  std::remove_reference<
+    Atop<
+      Atop<
+        Function<And>,
+        Operator<Reduce>
+      >,
+      Function<
+        Fork<
+          Array,
+          Function<Equal>,
+          Function<
+            Atop<
+              Function<Tally>,
+              Function<
+                Fork<
+                  Function<Modulus>,
+                  Function<Right>,
+                  Function<
+                    Fork<
+                      Function<
+                        Atop<
+                          Function<Tally>,
+                          Operator<Key>
+                        >
+                      >,
+                      Operator<Beside>,
+                      Function<Enlist>
+                    >
+                  >
+                >
+              >
+            >
+          >
+        >
+      >
+    >&
+  >::type,
+  std::remove_reference<Var&>::type,
+  Context&
+)
+{
+}
+#endif
+
+
+namespace {
+Function<
+  Atop<
+    Function<Plus>,
+    Operator<Reduce>
+  >
+>
+join(
+  Function<Plus> left,
+  Operator<Reduce> right,
+  Context&
+)
+{
+  return { std::move(left), std::move(right) };
+}
+}
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
@@ -4450,6 +4515,7 @@ static void runSimpleTests()
 
   assert(_(_.tally, 1, 4, 5) == _(3));
   assert(_(2, _.modulus, 3) == 1);
+  assert(_(_(_.plus, _.reduce), _(1, 2)) == _(3));
 }
 
 
