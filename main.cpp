@@ -1023,16 +1023,11 @@ static void extractValuesTo(Values &values, Array a)
 
 
 namespace {
-Array evaluate(
- Atop<Function<Enlist>, Array> arg,
- Context&
-)
+Array evaluate(Atop<Function<Enlist>, Array> arg, Context&)
 {
-  // Extract all the values
   Values values;
   extractValuesTo(values, std::move(arg.right));
-  const int n = values.size();
-  return Array( { n }, std::move(values) );
+  return makeArrayFromValues(std::move(values));
 }
 }
 
