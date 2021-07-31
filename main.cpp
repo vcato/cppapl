@@ -1299,11 +1299,16 @@ Array evaluate(Fork<Array,Function<Greater>,Array> arg, Context &)
 
 
 namespace {
-template <typename A, typename B, typename C>
-Atop<Atop<A,Operator<B>>,Function<C>>
-evaluate(Atop<Atop<A,Operator<B>>,Function<C>> arg, Context &)
+template <typename A, typename B>
+auto evaluate(Atop<A, B> arg, Context &context)
 {
-  return arg;
+  return
+    function(
+      atop(
+        evaluate(std::move(arg.left), context),
+        evaluate(std::move(arg.right), context)
+      )
+    );
 }
 }
 
