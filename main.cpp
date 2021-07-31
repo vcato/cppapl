@@ -2025,6 +2025,14 @@ evaluate(
 }
 
 
+namespace {
+template <typename F>
+struct Expr {
+  F f;
+};
+}
+
+
 template <typename T>
 struct MakeRValue {
   T operator()(T arg) const
@@ -2052,17 +2060,6 @@ struct MakeRValue<Function<T> &> {
 };
 
 
-#if 0
-Var MakeRValue<T&>::operator()(T&) const [
-  with T = BoundExpr<
-    defer2(Args ...) [
-      with Args = {Function<And>, Operator<Reduce>, int, Function<Equal>, Expr<defer2(Args ...) [with Args = {Function<Tally>, Function<Modulus>, Function<Right>, Operator<Beside>, Function<Tally>, Operator<Key>, Operator<Beside>, Function<Enlist>}]::<lambda(auto:6)> >}
-    ]::<lambda(auto:6)>
-  >
-]’:
-#endif
-
-
 template <typename T>
 struct MakeRValue<T&> {
   Var operator()(T &arg) const
@@ -2079,14 +2076,6 @@ struct MakeRValue<const char (&)[n]> {
     return makeArrayFromString(arg);
   }
 };
-
-
-namespace {
-template <typename F>
-struct Expr {
-  F f;
-};
-}
 
 
 template <typename F>
@@ -2291,7 +2280,7 @@ namespace {
 template <typename F, typename G, typename H>
 Array
 evaluate(
-  Atop< Function<Fork<F,G,H>>, Array > arg,
+  Atop< Function<Fork<F,Function<G>,Function<H>>>, Array > arg,
   Context& context
 )
 {
@@ -3240,45 +3229,44 @@ join(
 }
 
 
-#if CHANGE_TEST
 namespace {
+template <typename F, typename G>
 Fork<
   Atop<
-    Function<Tally>,
+    Function<F>,
     Operator<Key>
   >,
   Operator<Beside>,
-  Function<Enlist>
+  Function<G>
 >
 join(
-  Function<Tally> left,
+  Function<F> left,
   Partial<
     Operator<Key>,
     Partial<
       Operator<Beside>,
-      Function<Enlist>
+      Function<G>
     >
   > right,
   Context&
 )
 {
-  Function<Tally> tally = std::move(left);
+  Function<F> f = std::move(left);
   Operator<Key> key = std::move(right.left);
   Operator<Beside> beside = std::move(right.right.left);
-  Function<Enlist> enlist = std::move(right.right.right);
+  Function<G> g = std::move(right.right.right);
 
   return
     fork(
       atop(
-        std::move(tally),
+        std::move(f),
         std::move(key)
       ),
       std::move(beside),
-      std::move(enlist)
+      std::move(g)
     );
 }
 }
-#endif
 
 
 #if CHANGE_TEST
@@ -3397,33 +3385,6 @@ join(
         )
       )
     );
-}
-}
-#endif
-
-
-#if 0
-namespace {
-join(
-  Function<Tally>,
-  Fork<
-    Function<Modulus>,
-    Function<Right>,
-    Function<
-      Atop<
-        Function<
-          Atop<
-            Function<Tally>,
-            Operator<Key>
-          >
-        >,
-        Function<Enlist>
-      >
-    >
-  >,
-  Context&
-)
-{
 }
 }
 #endif
@@ -3629,53 +3590,6 @@ join(
 #endif
 
 
-#if 0
-join(
-  std::remove_reference<
-    Atop<
-      Atop<
-        Function<And>,
-        Operator<Reduce>
-      >,
-      Function<
-        Fork<
-          Array,
-          Function<Equal>,
-          Function<
-            Atop<
-              Function<Tally>,
-              Function<
-                Fork<
-                  Function<Modulus>,
-                  Function<Right>,
-                  Function<
-                    Fork<
-                      Function<
-                        Atop<
-                          Function<Tally>,
-                          Operator<Key>
-                        >
-                      >,
-                      Operator<Beside>,
-                      Function<Enlist>
-                    >
-                  >
-                >
-              >
-            >
-          >
-        >
-      >
-    >&
-  >::type,
-  std::remove_reference<Var&>::type,
-  Context&
-)
-{
-}
-#endif
-
-
 namespace {
 Function<
   Atop<
@@ -3690,6 +3604,59 @@ join(
 )
 {
   return { std::move(left), std::move(right) };
+}
+}
+
+
+namespace {
+template <typename F, typename G, typename H>
+Fork<
+  Atop<
+    Fork<
+      Function<F>,
+      Operator<Beside>,
+      Function<G>
+    >,
+    Operator<Key>
+  >,
+  Operator<Beside>,
+  Function<H>
+>
+join(
+  Function<F> left,
+  Partial<
+    Operator<Beside>,
+    Fork<
+      Atop<
+        Function<G>,
+        Operator<Key>
+      >,
+      Operator<Beside>,
+      Function<H>
+    >
+  > right,
+  Context&
+)
+{
+  Function<F> f = std::move(left);
+  Operator<Beside> beside = std::move(right.left);
+  Function<G> g = std::move(right.right.left.left);
+  Operator<Key> key = std::move(right.right.left.right);
+  Operator<Beside> beside2 = std::move(right.right.mid);
+  Function<H> h = std::move(right.right.right);
+
+  return {
+    {
+      {
+        std::move(f),
+        std::move(beside),
+        std::move(g)
+      },
+      std::move(key)
+    },
+    std::move(beside2),
+    std::move(h)
+  };
 }
 }
 
@@ -3874,6 +3841,113 @@ evaluate(
 #endif
 
 
+namespace {
+template <typename A, typename B>
+Function<
+  Fork<
+    Function<A>,
+    Operator<Beside>,
+    Function<B>
+  >
+>
+evaluate(
+  Fork<
+    Function<A>,
+    Operator<Beside>,
+    Function<B>
+  > arg,
+  Context&
+)
+{
+  return function(std::move(arg));
+}
+}
+
+
+namespace {
+template <typename F,typename G>
+Array
+evaluate(
+  Atop<
+    Function<
+      Fork<
+        Function<F>,
+        Operator<Beside>,
+        Function<G>
+      >
+    >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  Function<F> f = std::move(arg.left.body.left);
+  Function<G> g = std::move(arg.left.body.right);
+  Array a1 = std::move(arg.right);
+  Array a2 = evaluate(atop(g, std::move(a1)), context);
+  return evaluate(atop(f, std::move(a2)), context);
+}
+}
+
+
+namespace {
+template <typename F, typename G, typename H>
+Function<
+  Fork<
+    Function<
+      Atop<
+        Function<
+          Fork<
+            Function<F>,
+            Operator<Beside>,
+            Function<G>
+          >
+        >,
+        Operator<Key>
+      >
+    >,
+    Operator<Beside>,
+    Function<H>
+  >
+>
+evaluate(
+  Fork<
+    Atop<
+      Fork<
+        Function<F>,
+        Operator<Beside>,
+        Function<G>
+      >,
+      Operator<Key>
+    >,
+    Operator<Beside>,
+    Function<H>
+  > arg,
+  Context&
+)
+{
+  Operator<Key> key = std::move(arg.left.right);
+  Operator<Beside> beside2 = std::move(arg.mid);
+  Function<H> h = std::move(arg.right);
+
+  return {
+    {
+      {
+        {
+          {
+            std::move(arg.left.left)
+          },
+          std::move(key)
+        }
+      },
+      std::move(beside2),
+      std::move(h)
+    }
+  };
+}
+}
+
+
 template <typename...Args>
 static auto evaluateInContext(Context &context, Args &&...args)
 {
@@ -4021,7 +4095,7 @@ template <typename T>
 Array
 evaluate(
   Atop<
-    Atop< Function<T>, Operator<Key> >,
+    Function< Atop< Function<T>, Operator<Key> > >,
     Array
   > arg,
   Context& context
@@ -4032,7 +4106,7 @@ evaluate(
   // of these pairs.
 
   std::map<Array, Values, LessArrayFunction> m;
-  Function<T> f = std::move(arg.left.left);
+  Function<T> f = std::move(arg.left.body.left);
 
   if (isVector(arg.right)) {
     int index = 1;
@@ -4076,6 +4150,25 @@ evaluate(
   }
 
   assert(false);
+}
+}
+
+
+namespace {
+template <typename T>
+Array
+evaluate(
+  Atop<
+    Atop< Function<T>, Operator<Key> >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  Function<T> t = std::move(arg.left.left);
+  Operator<Key> key = std::move(arg.left.right);
+  Array a = std::move(arg.right);
+  return evaluate(atop(function(atop(std::move(t),key)), std::move(a)), context);
 }
 }
 
@@ -4724,10 +4817,14 @@ static void test3000()
 static void testRedistributeCharacters()
 {
   Placeholder _;
-
   Array s = _("abc", "aabc", "bcccc");
 
+  assert(
+    _(_(_.right, _.beside, _.tally, _.key, _.beside, _.enlist), s) == _(3,3,6)
+  );
+
 #if CHANGE_TEST
+#if 0
   auto solve =
     _(
       _.and_, _.reduce,
@@ -4737,6 +4834,11 @@ static void testRedistributeCharacters()
         _.beside, _.enlist
       )
     );
+#endif
+
+  auto solve = _(_.tally, _.key, _.beside, _.enlist);
+  Array result = _(solve, s);
+  assert(result == _(1,1,1));
 #else
   auto solve =
     _.dfn(
@@ -4746,9 +4848,9 @@ static void testRedistributeCharacters()
       _.right, _.beside, _.tally, _.key,
       _.enlist, _.right_arg
     );
+  assert(_(solve, s) == _(1));
 #endif
 
-  assert(_(solve, s) == _(1));
 }
 
 
