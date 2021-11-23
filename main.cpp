@@ -6,8 +6,6 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
-#define ADD_TEST 0
-
 #define SHOW(x) (cerr << #x << ": " << (x) << "\n")
 
 
@@ -1608,6 +1606,27 @@ evaluate(
   }
 
   return Array(std::move(shape), std::move(values));
+}
+}
+
+
+namespace {
+template <typename A>
+Array
+evaluate(
+  Fork<Array, Atop<Function<A>, Operator<Commute> >, Array> arg,
+  Context& context
+)
+{
+  return
+    evaluate(
+      fork(
+        std::move(arg.right),
+        std::move(arg.mid.left),
+        std::move(arg.left)
+      ),
+      context
+    );
 }
 }
 
@@ -4483,7 +4502,6 @@ static void testRedistributeCharacters()
 }
 
 
-#if ADD_TEST
 static void test4000()
 {
   Placeholder _;
@@ -4504,7 +4522,6 @@ static void test4000()
 
   //assert(result == _(4000));
 }
-#endif
 
 
 int main()
@@ -4518,7 +4535,5 @@ int main()
   testGrille();
   test3000();
   testRedistributeCharacters();
-#if ADD_TEST
   test4000();
-#endif
 }
