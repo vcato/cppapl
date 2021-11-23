@@ -6,9 +6,10 @@
 #include "optional.hpp"
 #include "vectorio.hpp"
 
-#define CHANGE_TEST 0
+#define ADD_TEST 0
 
 #define SHOW(x) (cerr << #x << ": " << (x) << "\n")
+
 
 using std::cerr;
 using std::ostream;
@@ -2488,19 +2489,6 @@ Partial<Operator<T>,Function<U>> join(Operator<T>, Function<U>, Context &)
 
 
 namespace {
-template <typename T, typename U, typename V>
-Atop<
-  Atop<Function<T>,Operator<V>>,
-  Function<U>
->
-join(Function<T>, Partial<Operator<V>, Function<U>>, Context &)
-{
-  return {};
-}
-}
-
-
-namespace {
 template<typename T, typename U>
 Atop<Function<T>,Array>
 join(
@@ -3269,327 +3257,6 @@ join(
 }
 
 
-#if CHANGE_TEST
-namespace {
-Atop<
-  Function<Right>,
-  Fork<
-    Function<
-      Atop<
-        Function<Tally>,
-        Operator<Key>
-      >
-    >,
-    Operator<Beside>,
-    Function<Enlist>
-  >
->
-join(
-  Function<Right> left,
-  Partial<
-    Operator<Beside>,
-    Fork<
-      Atop<
-        Function<Tally>,
-        Operator<Key>
-      >,
-      Operator<Beside>,
-      Function<Enlist>
-    >
-  > right,
-  Context&
-)
-{
-  Function<Right> right2 = std::move(left);
-  Function<Tally> tally = std::move(right.right.left.left);
-  Operator<Key> key = std::move(right.right.left.right);
-  Operator<Beside> beside = std::move(right.right.mid);
-  Function<Enlist> enlist = std::move(right.right.right);
-
-  return
-    atop(
-      std::move(right2),
-      fork(
-        function(
-          atop(
-            std::move(tally),
-            std::move(key)
-          )
-        ),
-        std::move(beside),
-        std::move(enlist)
-      )
-    );
-}
-}
-#endif
-
-
-#if CHANGE_TEST
-namespace {
-Fork<
-  Function<Modulus>,
-  Function<Right>,
-  Function<
-    Fork<
-      Function<
-        Atop<
-          Function<Tally>,
-          Operator<Key>
-        >
-      >,
-      Operator<Beside>,
-      Function<Enlist>
-    >
-  >
->
-join(
-  Function<Modulus> left,
-  Atop<
-    Function<Right>,
-    Fork<
-      Function<
-        Atop<
-          Function<Tally>,
-          Operator<Key>
-        >
-      >,
-      Operator<Beside>,
-      Function<Enlist>
-    >
-  > right,
-  Context&
-)
-{
-  Function<Modulus> modulus = std::move(left);
-  Function<Right> right2 = std::move(right.left);
-  Function<Tally> tally = std::move(right.right.left.body.left);
-  Operator<Key> key = std::move(right.right.left.body.right);
-  Operator<Beside> beside = std::move(right.right.mid);
-  Function<Enlist> enlist = std::move(right.right.right);
-
-  return
-    fork(
-      std::move(modulus),
-      std::move(right2),
-      function(
-        fork(
-          function(
-            atop(
-              std::move(tally),
-              std::move(key)
-            )
-          ),
-          std::move(beside),
-          std::move(enlist)
-        )
-      )
-    );
-}
-}
-#endif
-
-
-#if CHANGE_TEST
-namespace {
-Atop<
-  Function<Tally>,
-  Fork<
-    Function<Modulus>,
-    Function<Right>,
-    Function<
-      Fork<
-        Function<
-          Atop<
-            Function<Tally>,
-            Operator<Key>
-          >
-        >,
-        Operator<Beside>,
-        Function<Enlist>
-      >
-    >
-  >
->
-join(
-  Function<Tally> left,
-  Fork<
-    Function<Modulus>,
-    Function<Right>,
-    Function<
-      Fork<
-        Function<
-          Atop<
-            Function<Tally>,
-            Operator<Key>
-          >
-        >,
-        Operator<Beside>,
-        Function<Enlist>
-      >
-    >
-  > right,
-  Context&
-)
-{
-  return atop(std::move(left), std::move(right));
-}
-}
-#endif
-
-
-#if CHANGE_TEST
-namespace {
-Fork<
-  Array,
-  Function<Equal>,
-  Function<
-    Atop<
-      Function<Tally>,
-      Function<
-        Fork<
-          Function<Modulus>,
-          Function<Right>,
-          Function<
-            Fork<
-              Function<
-                Atop<
-                  Function<Tally>,
-                  Operator<Key>
-                >
-              >,
-              Operator<Beside>,
-              Function<Enlist>
-            >
-          >
-        >
-      >
-    >
-  >
->
-join(
-  Array left,
-  Atop<
-    Function<Equal>,
-    Function<
-      Atop<
-        Function<Tally>,
-        Function<
-          Fork<
-            Function<Modulus>,
-            Function<Right>,
-            Function<
-              Fork<
-                Function<
-                  Atop<
-                    Function<Tally>,
-                    Operator<Key>
-                  >
-                >,
-                Operator<Beside>,
-                Function<Enlist>
-              >
-            >
-          >
-        >
-      >
-    >
-  > right,
-  Context&
-)
-{
-  Function<Equal> equal = std::move(right.left);
-  return fork(std::move(left), std::move(equal), std::move(right.right));
-}
-}
-#endif
-
-
-#if CHANGE_TEST
-namespace {
-Atop<
-  Atop<
-    Function<And>,
-    Operator<Reduce>
-  >,
-  Function<
-    Fork<
-      Array,
-      Function<Equal>,
-      Function<
-        Atop<
-          Function<Tally>,
-          Function<
-            Fork<
-              Function<Modulus>,
-              Function<Right>,
-              Function<
-                Fork<
-                  Function<
-                    Atop<
-                      Function<Tally>,
-                      Operator<Key>
-                    >
-                  >,
-                  Operator<Beside>,
-                  Function<Enlist>
-                >
-              >
-            >
-          >
-        >
-      >
-    >
-  >
->
-join(
-  Function<And> left,
-  Partial<
-    Operator<Reduce>,
-    Fork<
-      Array,
-      Function<Equal>,
-      Function<
-        Atop<
-          Function<Tally>,
-          Function<
-            Fork<
-              Function<Modulus>,
-              Function<Right>,
-              Function<
-                Fork<
-                  Function<
-                    Atop<
-                      Function<Tally>,
-                      Operator<Key>
-                    >
-                  >,
-                  Operator<Beside>,
-                  Function<Enlist>
-                >
-              >
-            >
-          >
-        >
-      >
-    >
-  > right,
-  Context&
-)
-{
-  return
-    atop(
-      atop(
-        std::move(left),
-        std::move(right.left)
-      ),
-      function(std::move(right.right))
-    );
-}
-}
-#endif
-
-
 namespace {
 Function<
   Atop<
@@ -3657,6 +3324,40 @@ join(
     std::move(beside2),
     std::move(h)
   };
+}
+}
+
+
+namespace {
+template <typename A, typename B>
+Atop<
+  Function<
+    Atop<
+      Function<A>,
+      Operator<Reduce>
+    >
+  >,
+  Function<B>
+>
+join(
+  Function<A> left,
+  Partial<
+    Operator<Reduce>,
+    Function<B>
+  > right,
+  Context&
+)
+{
+  return
+    atop(
+      function(
+        atop(
+          std::move(left),
+          std::move(right.left)
+        )
+      ),
+      std::move(right.right)
+    );
 }
 }
 
@@ -3785,60 +3486,6 @@ join(
     );
 }
 }
-
-
-#if CHANGE_TEST
-namespace {
-Function<
-  Atop<
-    Function<Tally>,
-    Function<
-      Fork<
-        Function<Modulus>,
-        Function<Right>,
-        Function<
-          Fork<
-            Function<
-              Atop<
-                Function<Tally>,
-                Operator<Key>
-              >
-            >,
-            Operator<Beside>,
-            Function<Enlist>
-          >
-        >
-      >
-    >
-  >
->
-evaluate(
-  Atop<
-    Function<Tally>,
-    Fork<
-      Function<Modulus>,
-      Function<Right>,
-      Function<
-        Fork<
-          Function<
-            Atop<
-              Function<Tally>,
-              Operator<Key>
-            >
-          >,
-          Operator<Beside>,
-          Function<Enlist>
-        >
-      >
-    >
-  > arg,
-  Context&
-)
-{
-  return function(atop(std::move(arg.left), function(std::move(arg.right))));
-}
-}
-#endif
 
 
 namespace {
@@ -4823,23 +4470,6 @@ static void testRedistributeCharacters()
     _(_(_.right, _.beside, _.tally, _.key, _.beside, _.enlist), s) == _(3,3,6)
   );
 
-#if CHANGE_TEST
-#if 0
-  auto solve =
-    _(
-      _.and_, _.reduce,
-      0, _.equal,
-      _(_.tally, _.modulus, _.right,
-        _.beside, _.tally, _.key,
-        _.beside, _.enlist
-      )
-    );
-#endif
-
-  auto solve = _(_.tally, _.key, _.beside, _.enlist);
-  Array result = _(solve, s);
-  assert(result == _(1,1,1));
-#else
   auto solve =
     _.dfn(
       _.and_, _.reduce,
@@ -4849,9 +4479,32 @@ static void testRedistributeCharacters()
       _.enlist, _.right_arg
     );
   assert(_(solve, s) == _(1));
-#endif
 
 }
+
+
+#if ADD_TEST
+static void test4000()
+{
+  Placeholder _;
+#if 0
+  auto result =
+    _(
+      _(
+        _(_.plus, _.commute, _.divide, _.commute),
+        _(
+          _.power, _.times, 1, _.beside, _.plus, _.atop,
+          _.left, _.power, _.commute, _.right
+        ),
+        _.right
+      ), 5
+    );
+#endif
+  assert(_(2, _.power, _.commute, 3) == 9);
+
+  //assert(result == _(4000));
+}
+#endif
 
 
 int main()
@@ -4865,4 +4518,7 @@ int main()
   testGrille();
   test3000();
   testRedistributeCharacters();
+#if ADD_TEST
+  test4000();
+#endif
 }
