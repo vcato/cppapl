@@ -489,6 +489,7 @@ struct First {};
 struct GradeUp {};
 struct Greater {};
 struct Iota {};
+struct Left {};
 struct LeftArg {};
 struct MemberOf {};
 struct Minus {};
@@ -1255,6 +1256,18 @@ Array evaluate(Fork<Array, Function<Right>, Array> arg, Context &)
 
 
 namespace {
+Array
+evaluate(
+  Fork<Array, Function<Left>, Array> arg,
+  Context&
+)
+{
+  return std::move(arg.left);
+}
+}
+
+
+namespace {
 Array evaluate(Fork<Array, Function<Roll>, Array> arg, Context &context)
 {
   if (arg.left.isNumber() && arg.right.isNumber()) {
@@ -1610,6 +1623,9 @@ evaluate(
 }
 
 
+// This shouldn't be necessary, since
+// evaluate(fork(Array,function(atop(function(A),operator(Commute))),Array)
+// should handle it
 namespace {
 template <typename A>
 Array
@@ -1624,6 +1640,23 @@ evaluate(
         std::move(arg.right),
         std::move(arg.mid.left),
         std::move(arg.left)
+      ),
+      context
+    );
+}
+}
+
+
+namespace {
+template <typename T>
+Array evaluate(Fork<Values,Function<T>,Array> arg, Context &context)
+{
+  return
+    evaluate(
+      fork(
+        makeArrayFromValues(std::move(arg.left)),
+        std::move(arg.mid),
+        std::move(arg.right)
       ),
       context
     );
@@ -2251,6 +2284,36 @@ evaluate(Fork<Array, Function<Partition>, Array> arg, Context&)
   cerr << "arg.left: " << arg.left << "\n";
   cerr << "arg.right: " << arg.right << "\n";
   assert(false);
+}
+}
+
+
+namespace {
+template <typename A>
+Array
+evaluate(
+  Fork<
+    Array,
+    Function<
+      Atop<
+        Function<A>,
+        Operator<Commute>
+      >
+    >,
+    Array
+  > arg,
+  Context& context
+)
+{
+  return
+    evaluate(
+      fork(
+        std::move(arg.right),
+        std::move(arg.mid.body.left),
+        std::move(arg.left)
+      ),
+      context
+    );
 }
 }
 
@@ -3381,6 +3444,37 @@ join(
 }
 
 
+namespace {
+template <typename A, typename B>
+Atop<
+  Function<
+    Atop<
+      Function<A>,
+      Operator<Commute>
+    >
+  >,
+  Function<B>
+>
+join(
+  Function<A> left,
+  Partial<
+    Operator<Commute>,
+    Function<B>
+  > right,
+  Context&
+)
+{
+  return
+    atop(
+      function(
+        atop(std::move(left), std::move(right.left))
+      ),
+      std::move(right.right)
+    );
+}
+}
+
+
 template <typename Arg1, typename Arg2, typename ...Args>
 static auto combine(Context &context, Arg1 arg1, Arg2 arg2, Args ...args)
 {
@@ -4092,6 +4186,7 @@ struct Placeholder {
   static constexpr Function<GradeUp>   grade_up = {};
   static constexpr Function<Greater>   greater = {};
   static constexpr Function<Iota>      iota = {};
+  static constexpr Function<Left>      left = {};
   static constexpr Function<MemberOf>  member_of = {};
   static constexpr Function<Minus>     minus = {};
   static constexpr Function<Modulus>   modulus = {};
@@ -4149,6 +4244,7 @@ constexpr Function<First>     Placeholder::first;
 constexpr Function<GradeUp>   Placeholder::grade_up;
 constexpr Function<Greater>   Placeholder::greater;
 constexpr Function<Iota>      Placeholder::iota;
+constexpr Function<Left>      Placeholder::left;
 constexpr Function<MemberOf>  Placeholder::member_of;
 constexpr Function<Minus>     Placeholder::minus;
 constexpr Function<Modulus>   Placeholder::modulus;
@@ -4519,6 +4615,7 @@ static void test4000()
     );
 #endif
   assert(_(2, _.power, _.commute, 3) == 9);
+  assert(_(2, _(_.left, _.power, _.commute, _.right), 3) == 9);
 
   //assert(result == _(4000));
 }
